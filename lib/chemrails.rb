@@ -7,8 +7,6 @@ module ChemRails
 
     file_path = File.expand_path("../vendor/assets/bin/checkmol-0.5-linux-i586", File.dirname(__FILE__))
 
-    return file_path
-
     command = '"' + file_path +'" -x -'
     IO.popen(command, 'r+') do |f|
 
