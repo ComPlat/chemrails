@@ -18,8 +18,10 @@ module ChemRails
 M  END')
 
       f.close_write
-      f.readlines
+      output = f.readlines
       f.close
+      
+      return output
     end
 
   end
