@@ -21,13 +21,6 @@ module ChemRails
 
   end
 
-  def self.getmolfile
-
-      file_path = File.expand_path("../vendor/assets/bin/thing.mol", File.dirname(__FILE__))
-      return IO.read (file_path)
-
-  end
-
 end
 
 
