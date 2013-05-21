@@ -20,8 +20,16 @@ M  END')
       f.close_write
       output = f.readlines
       f.close
-      
+
       return output
+    end
+
+  end
+
+  def self.getmolfile
+
+         
+      return File.read(File.expand_path('app/bin/thing.mol'))
     end
 
   end
