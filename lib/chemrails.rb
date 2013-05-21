@@ -28,8 +28,8 @@ M  END')
 
   def self.getmolfile
 
-         
-      return File.read(File.expand_path('app/bin/thing.mol'))
+      file_path = File.expand_path("../vendor/assets/javascript/thing.mol", File.dirname(__FILE__))
+      return file_path
 
   end
 
