@@ -30,7 +30,6 @@ M  END')
 
          
       return File.read(File.expand_path('app/bin/thing.mol'))
-    end
 
   end
 
