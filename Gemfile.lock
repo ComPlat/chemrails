@@ -1,0 +1,17 @@
+PATH
+  remote: .
+  specs:
+    chemrails (0.0.1)
+
+GEM
+  remote: http://rubygems.org/
+  specs:
+    rake (10.0.4)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  bundler (~> 1.3)
+  chemrails!
+  rake
