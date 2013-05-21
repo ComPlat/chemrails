@@ -7,7 +7,7 @@ module ChemRails
 
     file_path = File.expand_path("../vendor/assets/bin/checkmol-0.5-linux-i586", File.dirname(__FILE__))
 
-    command = '"' + file_path +'" -x -'
+    command = '"' + file_path +'" -X -'
     IO.popen(command, 'r+') do |f|
 
       f.write (molfile)
