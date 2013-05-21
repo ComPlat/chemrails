@@ -5,7 +5,9 @@ module ChemRails
 
   def self.getmoldetails
 
-    command = '"./app/bin/checkmol-0.5-linux-i586" -x -'
+    file_path = File.expand_path("../vendor/assets/bin/checkmol-0.5-linux-i586", File.dirname(__FILE__))
+
+    command = '"' + file_path +'" -x -'
     IO.popen(command, 'r+') do |f|
 
       f.write ('Compound\r\n
@@ -28,8 +30,8 @@ M  END')
 
   def self.getmolfile
 
-      file_path = File.expand_path("../vendor/assets/javascripts/thing.mol", File.dirname(__FILE__))
-      return file_path
+      file_path = File.expand_path("../vendor/assets/bin/thing.mol", File.dirname(__FILE__))
+      return IO.read (file_path)
 
   end
 
