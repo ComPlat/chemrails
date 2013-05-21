@@ -28,7 +28,7 @@ M  END')
 
   def self.getmolfile
 
-      file_path = File.expand_path("../vendor/assets/javascript/thing.mol", File.dirname(__FILE__))
+      file_path = File.expand_path("../vendor/assets/javascripts/thing.mol", File.dirname(__FILE__))
       return file_path
 
   end
