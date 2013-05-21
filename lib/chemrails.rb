@@ -29,7 +29,7 @@ M  END')
   def self.getmolfile
 
          
-      return File.read(File.expand_path('app/assets/bin/thing.mol'))
+      return File.read(File.expand_path('app/bin/thing.mol'))
 
   end
 
