@@ -1,3 +1,5 @@
+namespace 'chemrails'
+
 require 'rails/generators/migration'
 
 module ChemRails
