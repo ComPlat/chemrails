@@ -20,12 +20,11 @@ module ChemRails
 
       output.split(";").each do |x|
         k,v = x.split(":")
-        the_hash[k] ||= []
-        the_hash[k].push(v)
+        the_hash[k] = v
       end
 
       return the_hash
-      
+
     end
 
   end
