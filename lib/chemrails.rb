@@ -23,12 +23,16 @@ module ChemRails
 
     the_hash = Hash.new
 
-    output.split(";").each do |x|
+    if (output != "") then
 
-      if (!output.start_with? "\n") then
-        k,v = x.split(":")
-        the_hash[k.to_sym] = v
+      output.split(";").each do |x|
+
+        if (!output.start_with? "\n") then
+          k,v = x.split(":")
+          the_hash[k.to_sym] = v
+        end
       end
+
     end
 
     return the_hash
