@@ -15,10 +15,11 @@ module ChemRails
       f.write (molfile)
 
       f.close_write
-      output = f.readlines
+      output = f.readlines[0]
       f.close
 
     end
+
 
     the_hash = Hash.new
 
