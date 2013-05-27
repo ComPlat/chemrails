@@ -27,10 +27,9 @@ module ChemRails
 
       output.split(";").each do |x|
 
-        if (!output.start_with? "\\") then
-          k,v = x.split(":")
-          the_hash[k.to_sym] = v
-        end
+        k,v = x.split(":")
+        the_hash[k.to_sym] = v if v
+
       end
 
     end
