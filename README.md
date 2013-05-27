@@ -18,9 +18,9 @@ Add this line to your application's Gemfile:
 
 Change these settings in /config/environments/production.rb
 
-  config.serve_static_assets = true
-  config.assets.compress = false
-  config.assets.compile = true
+    config.serve_static_assets = true
+    config.assets.compress = false
+    config.assets.compile = true
 
 And then execute:
 
