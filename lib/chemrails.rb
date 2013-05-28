@@ -23,7 +23,7 @@ module ChemRails
 
     the_hash = Hash.new
 
-    if (output != "") then
+    if output then
 
       output.split(";").each do |x|
 
