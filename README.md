@@ -7,6 +7,7 @@ A set of cheminformatic components for fast & easy development of web based appl
 ## Contains the following components:
 
 checkmol (by Norbert Haider, GPL), included as binary
+canvasmol (by AlteredQualia, http://alteredqualia.com)
 
 
 
@@ -14,7 +15,7 @@ checkmol (by Norbert Haider, GPL), included as binary
 
 Add this line to your application's Gemfile:
 
-    gem 'dial_a_device_node'
+    gem 'chemrails'
 
 Change these settings in /config/environments/production.rb
 
@@ -25,11 +26,6 @@ Change these settings in /config/environments/production.rb
 And then execute:
 
     $ bundle
-
-Or install it yourself as:
-
-    $ gem install dial_a_device_node
-
 
 ## License
 
