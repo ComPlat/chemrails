@@ -1097,12 +1097,12 @@ function molecule_div(i) {
     return tmp;
 }
 
-function add_molecule_canvas(label, name, text) {
+function add_molecule_canvas(div, label, name, text) {
     var i = M_COUNTER;
     M_COUNTER++;
 
     var mdiv = $(molecule_div(i));
-    $("#moleculecontainer").html(mdiv);
+    $("#"+div).html(mdiv);
     
 
     var pars = PARS[get_type(name)];
@@ -1344,7 +1344,7 @@ $(document).ready(function(){
 function showMolecule (div, text) {
     targetdiv = div;
 
-        add_molecule_canvas("Imported molecule", "", text);
+        add_molecule_canvas(div, "Imported molecule", "", text);
     }
 
 function toggleAtoms (div) {
