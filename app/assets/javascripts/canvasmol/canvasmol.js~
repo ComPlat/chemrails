@@ -663,7 +663,7 @@ function Molecule(pars) {
 
     this.flat_shading = pars.flat_shading;
     this.sphere_shading = pars.sphere_shading;
-    this.letters_shading = 1;
+    this.letters_shading = 0;
 
     this.atom_colors = pars.atom_colors;
 
@@ -1078,7 +1078,7 @@ function molecule_div(i) {
     var tmp = '';
     tmp += '<div class="molecule shadow">';
    
-    tmp += '<canvas width="100" height="100" id="screen'+i+'"></canvas>';
+    tmp += '<canvas width="200" height="200" id="screen'+i+'"></canvas>';
     tmp += '<br class="clr"/>';
 
     tmp += '<div class="b_left touch"> </div>';

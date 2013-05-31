@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    chemrails (0.0.1)
+    chemrails (0.0.22)
 
 GEM
   remote: http://rubygems.org/
