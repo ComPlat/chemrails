@@ -30,8 +30,6 @@ module ChemRails
         k,v = x.split(":")
         if v then
           the_hash[k.to_sym] = v 
-        else
-          the_hash[k.to_sym] = "0"
         end
       end
 
