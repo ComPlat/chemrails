@@ -28,9 +28,9 @@ module ChemRails
       output.split(";").each do |x|
 
         k,v = x.split(":")
-        the_hash[k.to_sym] = "0"
-        the_hash[k.to_sym] = v if v
-
+        if v then
+          the_hash[k.to_sym] = v 
+        end
       end
 
     end
