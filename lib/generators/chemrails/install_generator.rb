@@ -1,7 +1,6 @@
 require 'rails/generators/migration'
 
 module ChemRails
-	module Generators
 		class InstallGenerator < Rails::Generators::Base
 			include Rails::Generators::Migration
 			source_root File.expand_path('../templates', __FILE__)
@@ -20,5 +19,4 @@ module ChemRails
 				migration_template "create_compounds.rb", "db/migrate/create_compounds.rb"
 			end
 		end
-	end
 end
