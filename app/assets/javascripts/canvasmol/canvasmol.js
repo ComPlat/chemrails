@@ -1079,18 +1079,18 @@ function molecule_div(i) {
     tmp += '<div class="molecule shadow">';
    
     tmp += '<canvas width="100" height="100" id="screen'+i+'"></canvas>';
-    tmp += '<br class="clr"/>';
+    //tmp += '<br class="clr"/>';
 
-    tmp += '<div class="b_left touch"> </div>';
-    tmp += '<div class="b_right touch"> </div>';
-    tmp += '<div class="b_up touch"> </div>';
-    tmp += '<div class="b_down touch"> </div>';
+    //tmp += '<div class="b_left touch"> </div>';
+    //tmp += '<div class="b_right touch"> </div>';
+    //tmp += '<div class="b_up touch"> </div>';
+    //tmp += '<div class="b_down touch"> </div>';
 //tmp += '<div class="button b_atoms" title="Toggle atoms">Atm</div>';
   //  tmp += '<div class="button b_bonds" title="Toggle bonds">Bnd</div>';
     //tmp += '<div class="button b_col" title="Atoms colors">ACol</div>';
     //tmp += '<div class="button b_flt" title="Atoms flat shading">AFlt</div>';
     //tmp += '<div class="button b_ltr" title="Atoms letters shading">ALtr</div>';
-    tmp += '<div class="button b_png"><a href="#">PNG</a></div>';
+    //tmp += '<div class="button b_png"><a href="#">PNG</a></div>';
     
 
     tmp += '</div>';
