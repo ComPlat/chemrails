@@ -8,7 +8,7 @@ A set of cheminformatic components for fast & easy development of web based appl
 
 checkmol (by Norbert Haider, GPL), included as binary
 canvasmol (by AlteredQualia, http://alteredqualia.com)
-
+ketcher (by GGA Software, http://ggasoftware.com)
 
 
 ## Installation as part of a Ruby on Rails project (gem)
