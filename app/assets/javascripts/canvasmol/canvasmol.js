@@ -74,7 +74,7 @@ for(var i in MENU_MAP)
     if(MENU_MAP[i]) MENU_MAP_LO[i.toLowerCase()] = MENU_MAP[i];
 
 var PARS = {
-"default": {'draw_atoms'  :1,
+"default": {'draw_atoms'  :0,
          'draw_bonds'     :1,
          'auto_x'         :0,
          'auto_y'         :0,
