@@ -13,10 +13,10 @@
 if (typeof(ui) == 'undefined')
     ui = function () {};
 
-ui.standalone = true;
+ui.standalone = false;
 
-ui.path = '/';
-ui.base_url = '';
+ui.base_url = window.location.origin;
+ui.path = ui.base_url + '/api/v1/ketcher/';
 
 ui.scale = 40;
 
@@ -173,7 +173,7 @@ ui.init = function ()
             button.title = button.title.replace("Ctrl", "Cmd");
         }, this);
     }
-    
+
     // Touch device stuff
     if (ui.is_touch)
     {
@@ -183,14 +183,14 @@ ui.init = function ()
             mousedown: 'touchstart',
             mouseup  : 'touchend'
         };
-        
+
         // to enable copy to clipboard on iOS
         $('output_mol').removeAttribute('readonly');
-        
+
         // rbalabanov: here is temporary fix for "drag issue" on iPad
         //BEGIN
         rnd.ReStruct.prototype.hiddenPaths = [];
-        
+
         rnd.ReStruct.prototype.clearVisel = function (visel)
         {
             for (var i = 0; i < visel.paths.length; ++i) {
@@ -343,9 +343,6 @@ ui.init = function ()
         ui.client_area.absolutize(); // Needed for clipping and scrollbars in IE
         $('ketcher_window').observe('resize', ui.onResize_Ketcher);
     }
-
-    ui.path = document.location.pathname.substring(0, document.location.pathname.lastIndexOf('/') + 1);
-    ui.base_url = document.location.href.substring(0, document.location.href.lastIndexOf('/') + 1);
 
     new Ajax.Request(ui.path + 'knocknock',
     {
@@ -1058,7 +1055,7 @@ ui.loadMolecule = function (mol_string, force_layout, check_empty_line, paste)
 {
     var smiles = mol_string.strip();
     var updateFunc = paste ? function (struct) {
-        struct.rescale(); 
+        struct.rescale();
         ui.copy(struct);
         ui.updateSelection();
         ui.selectMode('paste');
@@ -2242,7 +2239,7 @@ ui.structToClipboard = function (clipboard, struct, selection)
         clipboard.rgmap[frid] = rgid;
         util.Set.add(rgids, rgid);
     }, this);
-    
+
     util.Set.each(rgids, function(id){
         clipboard.rgroups[id] = struct.rgroups.get(id).getAttrs();
     }, this);
