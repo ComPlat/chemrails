@@ -105,7 +105,7 @@ chem.Molfile.fmtInfo = {
 		'CHG':'charge',
 		'RAD':'radical',
 		'MASS':'isotope',
-		'VAL':'valence',
+		'VAL':'explicitValence',
         'HCOUNT':'hCount',
         'INVRET':'invRet',
         'SUBST':'substitutionCount',
@@ -124,7 +124,7 @@ chem.Molfile.parseAtomLine = function (atomLine)
 		// generic
 		pp: new util.Vec2(parseFloat(atomSplit[0]), -parseFloat(atomSplit[1])),
 		label: atomSplit[4].strip(),
-		valence: mf.fmtInfo.valenceMap[mf.parseDecimalInt(atomSplit[10])],
+		explicitValence: mf.fmtInfo.valenceMap[mf.parseDecimalInt(atomSplit[10])],
 
 		// obsolete
 		massDifference: mf.parseDecimalInt(atomSplit[5]),
@@ -141,7 +141,6 @@ chem.Molfile.parseAtomLine = function (atomLine)
 		// reaction query
 		exactChangeFlag: mf.parseDecimalInt(atomSplit[16]) != 0
 	};
-	params.explicitValence = typeof(params.valence) != 'undefined';
 	return new chem.Struct.Atom(params);
 };
 
@@ -179,7 +178,7 @@ chem.Molfile.parseAtomLineV3000 = function (line)
 		}
 		atomListParams.ids = mf.labelsListToIds(label.split(","));
 		params['atomList'] = new chem.Struct.AtomList(atomListParams);
-		params['label'] = '';
+		params['label'] = 'L#';
 	} else {
 		params['label'] = label;
 	}
@@ -208,7 +207,6 @@ chem.Molfile.parseAtomLineV3000 = function (line)
             params.attpnt = value.strip()-0;
         }
 	}
-	params.explicitValence = typeof(params.valence) != 'undefined';
 	return new chem.Struct.Atom(params);
 };
 
@@ -224,17 +222,20 @@ chem.Molfile.parseBondLineV3000 = function (line)
 	};
 	split.splice(0, 4);
 	for (i = 0; i < split.length; ++i) {
-		subsplit = mf.splitonce(split[i], '=');
-		key = subsplit[0];
-		value = subsplit[1];
-		if (key == 'CFG')
-			params.stereo = mf.fmtInfo.v30bondStereoMap[mf.parseDecimalInt(value)];
-		else if (key == 'TOPO')
-			params.topology = mf.fmtInfo.bondTopologyMap[mf.parseDecimalInt(value)];
-		else if (key == 'RXCTR')
-			params.reactingCenterStatus = mf.parseDecimalInt(value);
-		else if (key == 'STBOX')
-			params.stereoCare = mf.parseDecimalInt(value);
+            subsplit = mf.splitonce(split[i], '=');
+            key = subsplit[0];
+            value = subsplit[1];
+            if (key == 'CFG') {
+                params.stereo = mf.fmtInfo.v30bondStereoMap[mf.parseDecimalInt(value)];
+                if (params.type == chem.Struct.BOND.TYPE.DOUBLE && params.stereo == chem.Struct.BOND.STEREO.EITHER)
+                    params.stereo = chem.Struct.BOND.STEREO.CIS_TRANS;
+            } else if (key == 'TOPO') {
+                params.topology = mf.fmtInfo.bondTopologyMap[mf.parseDecimalInt(value)];
+            } else if (key == 'RXCTR') {
+                params.reactingCenterStatus = mf.parseDecimalInt(value);
+            } else if (key == 'STBOX') {
+                params.stereoCare = mf.parseDecimalInt(value);
+            }
 	}
 	return new chem.Struct.Bond(params);
 };
@@ -345,12 +346,13 @@ chem.Molfile.initSGroup = function (sGroups, propData)
 	}
 };
 
-chem.Molfile.applySGroupProp = function (sGroups, propName, propData, numeric)
+chem.Molfile.applySGroupProp = function (sGroups, propName, propData, numeric, core)
 {
 	var mf = chem.Molfile;
 	var kv = mf.readKeyValuePairs(propData, !(numeric));
 	for (var key in kv) {
-		sGroups[key].data[propName] = kv[key];
+        // "core" properties are stored directly in an sgroup, not in sgroup.data
+        (core ? sGroups[key] : sGroups[key].data) [propName] = kv[key];
 	}
 };
 
@@ -443,9 +445,10 @@ chem.Molfile.applyDataSGroupData = function (sg, data, finalize) {
 	sg.data.fieldValue = (sg.data.fieldValue || '') + data;
 	if (finalize) {
 		sg.data.fieldValue = util.stripRight(sg.data.fieldValue);
-                if (sg.data.fieldValue.startsWith('"') && sg.data.fieldValue.endsWith('"'))
-                    sg.data.fieldValue = sg.data.fieldValue.substr(1, sg.data.fieldValue.length - 2);
-        }
+        if (sg.data.fieldValue.startsWith('"') && sg.data.fieldValue.endsWith('"'))
+            sg.data.fieldValue = sg.data.fieldValue.substr(1, sg.data.fieldValue.length - 2);
+        sg.data.fieldValue += '\n';
+    }
 };
 
 chem.Molfile.applyDataSGroupDataLine = function (sGroups, propData, finalize) {
@@ -525,16 +528,22 @@ chem.Molfile.parsePropertyLines = function (ctab, ctabLines, shift, end, sGroups
             } else if (type == "ALS") { // atom list
 				if (!props.get('atomList'))
 					props.set('atomList', new util.Map());
-				props.get('atomList').update(
-					mf.parsePropertyLineAtomList(
-						mf.partitionLine(propertyData, [1,3,3,1,1,1]),
-						mf.partitionLineFixed(propertyData.slice(10), 4, false)));
+                var list = mf.parsePropertyLineAtomList(
+                    mf.partitionLine(propertyData, [1,3,3,1,1,1]),
+                    mf.partitionLineFixed(propertyData.slice(10), 4, false));
+                props.get('atomList').update(
+					list);
+                if (!props.get('label'))
+                    props.set('label', new util.Map());
+                for (var aid in list) props.get('label').set(aid, 'L#');
 			} else if (type == "STY") { // introduce s-group
 				mf.initSGroup(sGroups, propertyData);
 			} else if (type == "SST") {
 				mf.applySGroupProp(sGroups, 'subtype', propertyData);
 			} else if (type == "SLB") {
 				mf.applySGroupProp(sGroups, 'label', propertyData, true);
+			} else if (type == "SPL") {
+				mf.applySGroupProp(sGroups, 'parent', propertyData, true, true);
 			} else if (type == "SCN") {
 				mf.applySGroupProp(sGroups, 'connectivity', propertyData);
 			} else if (type == "SAL") {
@@ -598,7 +607,7 @@ chem.Molfile.parseCTabV2000 = function (ctabLines, countsSplit)
 	var atomLists = atomListLines.map(mf.parseAtomListLine);
 	atomLists.each(function(pair){
 		ctab.atoms.get(pair.aid).atomList = pair.atomList;
-		ctab.atoms.get(pair.aid).label = '';
+		ctab.atoms.get(pair.aid).label = 'L#';
 	});
 
 	var sGroups = {}, rLogic = {};
@@ -611,15 +620,28 @@ chem.Molfile.parseCTabV2000 = function (ctabLines, countsSplit)
 	var atomMap = {};
     var sid;
 	for (sid in sGroups) {
+        var sg = sGroups[sid];
+        if (sg.type === 'DAT' && sg.atoms.length === 0) {
+            var parent = sGroups[sid].parent;
+            if (parent >= 0) {
+                var psg = sGroups[parent - 1];
+                if (psg.type === 'GEN') {
+                    sg.atoms = util.array(psg.atoms);
+                }
+            }
+        }
+	}
+	for (sid in sGroups) {
 		chem.SGroup.addGroup(ctab, sGroups[sid], atomMap);
 	}
 	var emptyGroups = [];
-	for (sid in sGroups) {
+	for (sid in sGroups) { // TODO: why do we need that?
 		chem.SGroup.filter(ctab, sGroups[sid], atomMap);
 		if (sGroups[sid].atoms.length == 0 && !sGroups[sid].allAtoms)
 			emptyGroups.push(sid);
 	}
 	for (i = 0; i < emptyGroups.length; ++i) {
+        ctab.sGroupForest.remove(emptyGroups[i]);
 		ctab.sgroups.remove(emptyGroups[i]);
 	}
         for (var rgid in rLogic) {
@@ -723,7 +745,7 @@ chem.Molfile.v3000parseSGroup = function (ctab, ctabLines, sgroups, atomMap, shi
         line = mf.stripV30(ctabLines[shift++]).strip();
         if (line.strip() == 'END SGROUP')
             return shift;
-        while (line[line.length-1] == '-')
+        while (line.charAt(line.length-1) == '-')
             line = (line.substr(0, line.length - 1) +
                 mf.stripV30(ctabLines[shift++])).strip();
         var split = mf.splitSGroupDef(line);
@@ -804,7 +826,7 @@ chem.Molfile.parseCTabV3000 = function (ctabLines, norgroups)
             line = mf.stripV30(ctabLines[shift++]).strip();
             if (line == 'END ATOM')
                 break;
-            while (line[line.length-1] == '-')
+            while (line.charAt(line.length-1) == '-')
                 line = (line.substring(0, line.length - 1) + mf.stripV30(ctabLines[shift++])).strip();
             ctab.atoms.add(mf.parseAtomLineV3000(line));
         }
@@ -816,7 +838,7 @@ chem.Molfile.parseCTabV3000 = function (ctabLines, norgroups)
                 line = mf.stripV30(ctabLines[shift++]).strip();
                 if (line == 'END BOND')
                     break;
-                while (line[line.length - 1] == '-')
+                while (line.charAt(line.length-1) == '-')
                     line = (line.substring(0, line.length - 1) + mf.stripV30(ctabLines[shift++])).strip();
                 ctab.bonds.add(mf.parseBondLineV3000(line));
             }
@@ -908,8 +930,9 @@ chem.Molfile.parseMol = function (/* string */ ctabLines) /* chem.Struct */
     if (ctabLines[0].search("\\$MDL") == 0) {
         return this.parseRg2000(ctabLines);
     }
-	ctabLines = ctabLines.slice(3);
-    return this.parseCTab(ctabLines);
+    var struct = this.parseCTab(ctabLines.slice(3));
+    struct.name = ctabLines[0].strip();
+    return struct;
 };
 
 chem.Molfile.parseCTab = function (/* string */ ctabLines) /* chem.Struct */
@@ -939,20 +962,24 @@ chem.MolfileSaver.prototype.prepareSGroups = function (skipErrors)
 	var mol = this.molecule;
 	var sgroups = mol.sgroups;
 	var toRemove = [];
-	sgroups.each(function(id, sg) {
+    
+	util.each(this.molecule.sGroupForest.getSGroupsBFS().reverse(), function(id) {
+		var sg = mol.sgroups.get(id);
 		try {
 			sg.prepareForSaving(mol);
 		} catch (ex) {
+            if (ui.forwardExceptions)
+                throw ex;
 			if (skipErrors && typeof(ex.id) == 'number') {
 				toRemove.push(ex.id);
 			} else {
 				throw ex;
 			}
 		}
-	});
-        if (toRemove.length > 0) {
-            alert("WARNING: " + toRemove.length.toString() + " invalid S-groups were detected. They will be omitted." );
-        }
+	}, this);
+    if (toRemove.length > 0) {
+        alert("WARNING: " + toRemove.length.toString() + " invalid S-groups were detected. They will be omitted." );
+    }
 	for (var i = 0; i < toRemove.length; ++i) {
 		mol.sGroupDelete(toRemove[i]);
 	}
@@ -1022,7 +1049,7 @@ chem.MolfileSaver.prototype.saveMolecule = function (molecule, skipSGroupErrors,
 	this.molfile = '';
 	if (this.reaction) {
         if (molecule.rgroups.count() > 0)
-            alert("Reactions with r-groups are not supported at the moment. R-fragments will be discarded in saving");
+            throw new Error("Unable to save the structure - reactions with r-groups are not supported at the moment");
 		var components = chem.MolfileSaver.getComponents(molecule);
 
 		var reactants = components.reactants, products = components.products, all = reactants.concat(products);
@@ -1076,7 +1103,7 @@ chem.MolfileSaver.prototype.writeHeader = function ()
 {
 	var date = new Date();
 
-	this.writeCR();
+	this.writeCR(); // TODO: write structure name
 	this.writeWhiteSpace(2);
 	this.write('Ketcher');
 	this.writeWhiteSpace();
@@ -1179,7 +1206,7 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
 			atom.stereoCare = 0;
 		this.writePaddedNumber(atom.stereoCare, 3);
 
-		this.writePaddedNumber(!atom.explicitValence ? 0 : (atom.valence == 0 ? 15 : atom.valence), 3);
+		this.writePaddedNumber(atom.explicitValence < 0 ? 0 : (atom.explicitValence == 0 ? 15 : atom.explicitValence), 3);
 
         this.writePaddedNumber(0, 3);
         this.writePaddedNumber(0, 3);
@@ -1271,7 +1298,7 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
     if (rgroups)
         rgroups.each(function (rgid, rg) {
             if (rg.resth || rg.ifthen > 0 || rg.range.length > 0) {
-                var line = '  1 ' + util.paddedInt(rgid, 3) + ' ' + util.paddedInt(rg.ifthen, 3) + ' ' + util.paddedInt(rg.resth ? 1 : 0, 3) + ' ' + rg.range;
+                var line = '  1 ' + util.paddedInt(rgid, 3) + ' ' + util.paddedInt(rg.ifthen, 3) + ' ' + util.paddedInt(rg.resth ? 1 : 0, 3) + '   ' + rg.range;
                 rglogic_list.push(line);
             }
         });
@@ -1335,65 +1362,66 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
 		}
 	}
 
-	var sgmap = {}, cnt = 1;
-	this.molecule.sgroups.each(function (id) {
+	var sgmap = {}, cnt = 1, sgmapback = {};
+	var sgorder = this.molecule.sGroupForest.getSGroupsBFS();
+	util.each(sgorder, function (id) {
+		sgmapback[cnt] = id;
 		sgmap[id] = cnt++;
-	});
-	if (cnt > 1) {
+	}, this);
+	for (var q = 1; q < cnt; ++q) { // each group on its own
+		var id = sgmapback[q];
+		var sgroup = this.molecule.sgroups.get(id);
 		this.write('M  STY');
-		this.writePaddedNumber(cnt - 1, 3);
-		this.molecule.sgroups.each(function (id, sgroup) {
-			this.writeWhiteSpace(1);
-			this.writePaddedNumber(sgmap[id], 3);
-			this.writeWhiteSpace(1);
-			this.writePadded(sgroup.type, 3);
-		}, this);
+		this.writePaddedNumber(1, 3);
+		this.writeWhiteSpace(1);
+		this.writePaddedNumber(q, 3);
+		this.writeWhiteSpace(1);
+		this.writePadded(sgroup.type, 3);
 		this.writeCR();
 
 		// TODO: write subtype, M SST
 
 		this.write('M  SLB');
-		this.writePaddedNumber(cnt - 1, 3);
-		this.molecule.sgroups.each(function (id, sgroup) {
-			this.writeWhiteSpace(1);
-			this.writePaddedNumber(sgmap[id], 3);
-			this.writeWhiteSpace(1);
-			this.writePaddedNumber(sgmap[id], 3);
-		}, this);
+		this.writePaddedNumber(1, 3);
+		this.writeWhiteSpace(1);
+		this.writePaddedNumber(q, 3);
+		this.writeWhiteSpace(1);
+		this.writePaddedNumber(q, 3);
 		this.writeCR();
 
+		var parentid = this.molecule.sGroupForest.parent.get(id);
+		if (parentid >= 0) {
+			this.write('M  SPL');
+			this.writePaddedNumber(1, 3);
+			this.writeWhiteSpace(1);
+			this.writePaddedNumber(q, 3);
+			this.writeWhiteSpace(1);
+			this.writePaddedNumber(sgmap[parentid], 3);
+			this.writeCR();
+		}
+
 		// connectivity
-		var connectivity = '';
-		var connectivityCnt = 0;
-		this.molecule.sgroups.each(function (id, sgroup) {
-			if (sgroup.type == 'SRU' && sgroup.data.connectivity) {
-				connectivity += ' ';
-				connectivity += util.stringPadded(sgmap[id].toString(), 3);
-				connectivity += ' ';
-				connectivity += util.stringPadded(sgroup.data.connectivity, 3, true);
-				connectivityCnt++;
-			}
-		}, this);
-		if (connectivityCnt > 0) {
+		if (sgroup.type == 'SRU' && sgroup.data.connectivity) {
+			var connectivity = '';
+			connectivity += ' ';
+			connectivity += util.stringPadded(q.toString(), 3);
+			connectivity += ' ';
+			connectivity += util.stringPadded(sgroup.data.connectivity, 3, true);
 			this.write('M  SCN');
-			this.writePaddedNumber(connectivityCnt, 3);
+			this.writePaddedNumber(1, 3);
 			this.write(connectivity.toUpperCase());
 			this.writeCR();
 		}
 
-		this.molecule.sgroups.each(function (id, sgroup) {
-			if (sgroup.type == 'SRU') {
-				this.write('M  SMT ');
-				this.writePaddedNumber(sgmap[id], 3);
-				this.writeWhiteSpace();
-				this.write(sgroup.data.subscript || 'n');
-				this.writeCR();
-			}
-		}, this);
+		if (sgroup.type == 'SRU') {
+			this.write('M  SMT ');
+			this.writePaddedNumber(q, 3);
+			this.writeWhiteSpace();
+			this.write(sgroup.data.subscript || 'n');
+			this.writeCR();
+		}
 
-		this.molecule.sgroups.each(function (id, sgroup) {
-			this.writeCR(sgroup.saveToMolfile(this.molecule, sgmap, this.mapping, this.bondMapping));
-		}, this);
+		this.writeCR(sgroup.saveToMolfile(this.molecule, sgmap, this.mapping, this.bondMapping));
 	}
 
 	// TODO: write M  APO
@@ -1422,24 +1450,15 @@ chem.Molfile.parseRxn2000 = function (/* string[] */ ctabLines) /* chem.Struct *
 	var nReactants = countsSplit[0]-0,
 	nProducts = countsSplit[1]-0,
 	nAgents = countsSplit[2]-0;
-	ctabLines = ctabLines.slice(2); // consume counts line and following $MOL
+	ctabLines = ctabLines.slice(1); // consume counts line
 
-	var ret = new chem.Struct();
-	var molLines = [];
-	var i0 = 0, i;
-	for (i = 0; i < ctabLines.length; ++i) {
-		if (ctabLines[i].substr(0, 4) == "$MOL") {
-			if (i > i0)
-				molLines.push(ctabLines.slice(i0, i));
-			i0 = i + 1;
-		}
-	}
-	molLines.push(ctabLines.slice(i0));
-	var mols = [];
-	for (var j = 0; j < molLines.length; ++j) {
-		var mol = chem.Molfile.parseMol(molLines[j]);
-		mols.push(mol);
-	}
+    var mols = [];
+    while (ctabLines.length > 0 && ctabLines[0].substr(0, 4) == "$MOL") {
+        ctabLines = ctabLines.slice(1);
+        var n = 0; while (n < ctabLines.length && ctabLines[n].substr(0, 4) != "$MOL") n++;
+        mols.push(chem.Molfile.parseMol(ctabLines.slice(0, n)));
+        ctabLines = ctabLines.slice(n);
+    }
 	return mf.rxnMerge(mols, nReactants, nProducts, nAgents);
 };
 
@@ -1453,8 +1472,7 @@ chem.Molfile.parseRxn3000 = function (/* string[] */ ctabLines) /* chem.Struct *
 	nAgents = countsSplit.length > 2 ? countsSplit[2]-0 : 0;
 
     var assert = function (condition) {
-        if (!condition)
-            throw new Error("CTab format invalid");
+        util.assert(condition, "CTab format invalid");
     };
 
     var findCtabEnd = function (i) {
@@ -1645,18 +1663,18 @@ chem.Molfile.rxnMerge = function (mols, nReactants, nProducts, nAgents) /* chem.
 	}
 	bb1 = bbReactAll;
 	bb2 = bbProdAll;
-	if (!bb1 && !bb2)
-		throw new Error("reaction must contain at least one product or reactant");
-	var v1 = bb1 ? new util.Vec2(bb1.max.x, (bb1.max.y + bb1.min.y) / 2) : null;
-	var v2 = bb2 ? new util.Vec2(bb2.min.x, (bb2.max.y + bb2.min.y) / 2) : null;
-	var defaultOffset = 3;
-	if (!v1)
-		v1 = new util.Vec2(v2.x - defaultOffset, v2.y);
-	if (!v2)
-		v2 = new util.Vec2(v1.x + defaultOffset, v1.y);
-	var v = util.Vec2.lc2(v1, 0.5, v2, 0.5);
-
-	ret.rxnArrows.add(new chem.Struct.RxnArrow({'pp':v}));
+	if (!bb1 && !bb2) {
+        ret.rxnArrows.add(new chem.Struct.RxnArrow({'pp':new util.Vec2(0, 0)}));
+    } else {
+        var v1 = bb1 ? new util.Vec2(bb1.max.x, (bb1.max.y + bb1.min.y) / 2) : null;
+        var v2 = bb2 ? new util.Vec2(bb2.min.x, (bb2.max.y + bb2.min.y) / 2) : null;
+        var defaultOffset = 3;
+        if (!v1)
+            v1 = new util.Vec2(v2.x - defaultOffset, v2.y);
+        if (!v2)
+            v2 = new util.Vec2(v1.x + defaultOffset, v1.y);
+        ret.rxnArrows.add(new chem.Struct.RxnArrow({ 'pp' : util.Vec2.lc2(v1, 0.5, v2, 0.5 ) }));
+    }
 	ret.isReaction = true;
 	return ret;
 };
@@ -1686,7 +1704,7 @@ chem.Molfile.parseRg2000 = function (/* string[] */ ctabLines) /* chem.Struct */
 	ctabLines = ctabLines.slice(7);
     if (ctabLines[0].strip() != '$CTAB')
         throw new Error('RGFile format invalid');
-    var i = 1;while (ctabLines[i][0] != '$') i++;
+    var i = 1; while (ctabLines[i].charAt(0) != '$') i++;
     if (ctabLines[i].strip() != '$END CTAB')
         throw new Error('RGFile format invalid');
     var coreLines = ctabLines.slice(1, i);
@@ -1715,7 +1733,7 @@ chem.Molfile.parseRg2000 = function (/* string[] */ ctabLines) /* chem.Struct */
             }
             if (line != '$CTAB')
                 throw new Error('RGFile format invalid');
-            i = 1;while (ctabLines[i][0] != '$') i++;
+            i = 1; while (ctabLines[i].charAt(0) != '$') i++;
             if (ctabLines[i].strip() != '$END CTAB')
                 throw new Error('RGFile format invalid');
             fragmentLines[rgid].push(ctabLines.slice(1, i));
