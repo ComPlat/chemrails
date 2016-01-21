@@ -962,7 +962,7 @@ chem.MolfileSaver.prototype.prepareSGroups = function (skipErrors)
 	var mol = this.molecule;
 	var sgroups = mol.sgroups;
 	var toRemove = [];
-    
+
 	util.each(this.molecule.sGroupForest.getSGroupsBFS().reverse(), function(id) {
 		var sg = mol.sgroups.get(id);
 		try {
@@ -1566,7 +1566,7 @@ chem.Molfile.rxnMerge = function (mols, nReactants, nProducts, nAgents) /* chem.
             mol = mols[j];
             mol.scale(avgBondLength);
         }
-        
+
 	for (j = 0; j < mols.length; ++j) {
             mol = mols[j];
             var bb = mol.getCoordBoundingBoxObj();

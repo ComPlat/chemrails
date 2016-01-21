@@ -27,6 +27,7 @@ chem.Struct = function ()
 	this.rxnPluses = new util.Pool();
     this.frags = new util.Pool();
     this.rgroups = new util.Map();
+		this.polymers = new util.Map(); // init polymers list as well
     this.name = '';
     this.sGroupForest = new chem.SGroupForest(this);
 };
@@ -332,6 +333,7 @@ chem.Struct.Atom = function (params) {
     util.ifDef(this, params, 'rglabel', def('rglabel')); // r-group index mask, i-th bit stands for i-th r-site
     util.ifDef(this, params, 'attpnt', def('attpnt')); // attachment point
     util.ifDef(this, params, 'explicitValence', def('explicitValence'));
+		util.ifDef(this, params, 'isPolymer', def('isPolymer'));
 
     this.valence = 0;
     this.implicitH = 0; // implicitH is not an attribute
@@ -393,7 +395,8 @@ chem.Struct.Atom.attrlist = {
     'exactChangeFlag': 0,
     'rglabel': null,
     'attpnt': null,
-    'aam': 0
+    'aam': 0,
+		'isPolymer': false
 };
 
 chem.Struct.Atom.prototype.clone = function(fidMap)
@@ -1173,6 +1176,8 @@ chem.Struct.prototype.prepareLoopStructure = function () {
 
 chem.Struct.prototype.atomAddToSGroup = function (sgid, aid) {
     // TODO: [MK] make sure the addition does not break the hierarchy?
+		console.log('atom added');
+		console.log(aid);
     chem.SGroup.addAtom(this.sgroups.get(sgid), aid);
     util.Set.add(this.atoms.get(aid).sgs, sgid);
 }

@@ -186,6 +186,8 @@ chem.SGroup.clone = function (sgroup, aidMap, bidMap)
 
 chem.SGroup.addAtom = function (sgroup, aid)
 {
+    console.log('adding atom');
+    console.log(aid);
     sgroup.atoms.push(aid);
 };
 
@@ -339,7 +341,7 @@ chem.SGroup.getBracketParameters = function (mol, xbonds, atomSet, bb, d, n, ren
             var b1 = mol.bonds.get(xbonds[0]), b2 = mol.bonds.get(xbonds[1]);
             var cl0 = b1.getCenter(mol), cr0 = b2.getCenter(mol), tl = -1, tr = -1, tt = -1, tb = -1, cc = util.Vec2.centre(cl0, cr0);
             var dr = util.Vec2.diff(cr0, cl0).normalized(), dl = dr.negated(), dt = dr.rotateSC(1,0), db = dt.negated();
-            
+
             util.each(mol.sGroupForest.children.get(id), function(sgid) {
                 var bba = render ? render.ctab.sgroups.get(sgid).visel.boundingBox : null;
                 if (util.isNull(bba))
@@ -517,7 +519,7 @@ chem.SGroup.GroupMul = {
                     tailAtom = amap[xAtom1];
                 }
             }
-            
+
             util.each(newAtoms, function(aid) {
                 util.each(mol.sGroupForest.getPathToRoot(this.id).reverse(), function(sgid) {
                     mol.atomAddToSGroup(sgid, aid);

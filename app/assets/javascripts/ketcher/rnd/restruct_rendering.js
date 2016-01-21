@@ -148,6 +148,7 @@ rnd.ReStruct.prototype.drawBondSingleStereoBold = function(hb1, hb2, bond, isDou
 
 rnd.ReStruct.prototype.drawBondSingleDown = function (hb1, hb2)
 {
+	console.log('drawBondSingleDown called');
 	var a = hb1.p, b = hb2.p, n = hb1.norm;
 	var settings = this.render.settings;
 	var paper = this.render.paper;
@@ -685,6 +686,12 @@ rnd.ReStruct.prototype.showLabels = function ()
                     if (atom.a.rglabel & (1 << rgi)) label.text += ('R' + (rgi + 1).toString());
                 }
                 if (label.text == '') label = 'R#'; // for structures that missed 'M  RGP' tag in molfile
+								if(atom.a.isPolymer){
+									var circle = paper.circle(ps.x + 40, ps.y + 40, 20);// 20 is a radius. offset to 2*R
+									circle.attr("fill", "#000");// fill it with a black color
+									circle.attr("stroke", "#fff");
+									return true;
+								}
 			} else {
 				label.text = atom.a.label;
 				if (opt.atomColoring) {
@@ -1027,7 +1034,7 @@ rnd.ReStruct.prototype.showLabels = function ()
                 else
                     throw new Error('Invalid value for the exact change flag');
             }
-        
+						
             // this includes both aam flags, if any, and query features, if any
             // we render them together to avoid possible collisions
             aamText = (queryAttrsText.length > 0 ? queryAttrsText + '\n' : '') + (aamText.length > 0 ? '.' + aamText + '.' : '');

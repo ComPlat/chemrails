@@ -130,7 +130,7 @@ ui.Action.fromAtomsAttrs = function(ids, attrs, reset)
 		value = attrs[key];
 	    else if (reset)
 		value = chem.Struct.Atom.attrGetDefault(key);
-	    else 
+	    else
 		continue;
 	    action.addOp(new ui.Action.OpAtomAttr(id, key, value));
 	}

@@ -16,7 +16,7 @@ if (!window.rnd)
 rnd.templates = [
     {
         name: "benzene",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -39,7 +39,7 @@ rnd.templates = [
     },
     {
         name: "cyclopentadiene",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -60,7 +60,7 @@ rnd.templates = [
     },
     {
         name: "cyclohexane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -83,7 +83,7 @@ rnd.templates = [
     },
     {
         name: "cyclopentane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -104,7 +104,7 @@ rnd.templates = [
     },
     {
         name: "cyclopropane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -121,7 +121,7 @@ rnd.templates = [
     },
     {
         name: "cyclobutane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -140,7 +140,7 @@ rnd.templates = [
     },
     {
         name: "cycloheptane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +
@@ -165,7 +165,7 @@ rnd.templates = [
     },
     {
         name: "cyclooctane",
-        molfile: 
+        molfile:
             "\n" +
             "  Ketcher 11161218352D 1   1.00000     0.00000     0\n" +
             "\n" +

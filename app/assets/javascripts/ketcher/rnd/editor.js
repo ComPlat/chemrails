@@ -123,7 +123,9 @@ rnd.Editor.prototype.toolFor = function(tool) {
         return new rnd.Editor.APointTool(this);
     } else if (tool.startsWith('transform_rotate')) {
         return new rnd.Editor.RotateTool(this);
-    }
+    } else if (tool == 'polymer') {
+			return new rnd.Editor.PolymerTool(this);
+		}
     return null;
 };
 
@@ -1132,6 +1134,54 @@ rnd.Editor.RGroupAtomTool.prototype.OnMouseUp = function(event) {
     }
 };
 
+rnd.Editor.PolymerTool = rnd.Editor.RGroupAtomTool;
+
+rnd.Editor.PolymerTool.prototype.OnMouseUp = function(event) {
+    var ci = this.editor.render.findItem(event, ['atoms']);
+    if (!ci || ci.type == 'Canvas') {
+        this._hoverHelper.hover(null);
+        this.editor.ui.showRGroupTable({
+            onOk : function(rgNew) {
+                if (rgNew) {
+                    this.editor.ui.addUndoAction(
+                        this.editor.ui.Action.fromAtomAddition(
+                            this.editor.ui.page2obj(this.OnMouseMove0.lastEvent),
+                            { label : 'R#', rglabel : rgNew, isPolymer : true}
+                        ),
+                        true
+                    );
+                    this.editor.ui.render.update();
+                }
+            }.bind(this)
+        });
+        return true;
+    } else if (ci && ci.map == 'atoms') {
+        this._hoverHelper.hover(null);
+        var atom = this.editor.render.ctab.molecule.atoms.get(ci.id);
+        var lbOld = atom.label;
+        var rgOld = atom.rglabel;
+        this.editor.ui.showRGroupTable({
+            selection : rgOld,
+            onOk : function(rgNew) {
+                if (rgOld != rgNew || lbOld != 'R#') {
+                    var newProps = Object.clone(chem.Struct.Atom.attrlist); // TODO review: using Atom.attrlist as a source of default property values
+                    if (rgNew) {
+                        newProps.label = 'R#';
+                        newProps.rglabel = rgNew;
+                        newProps.aam = atom.aam;
+                    } else {
+                        newProps.label = 'C';
+                        newProps.aam = atom.aam;
+                    }
+										newProps.isPolymer = true;
+                    this.editor.ui.addUndoAction(this.editor.ui.Action.fromAtomsAttrs(ci.id, newProps), true);
+                    this.editor.ui.render.update();
+                }
+            }.bind(this)
+        });
+        return true;
+    }
+};
 
 rnd.Editor.RGroupFragmentTool = function(editor) {
     this.editor = editor;
@@ -1755,4 +1805,3 @@ rnd.Editor.RotateTool.prototype.OnCancel = function() {
     // don't reset the selection when leaving the canvas, see KETCHER-632
     // this.editor._selectionHelper.setSelection();
 };
-
