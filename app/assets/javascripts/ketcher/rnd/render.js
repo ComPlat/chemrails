@@ -594,6 +594,8 @@ rnd.Render.prototype.setViewSize = function (viewSz)
 rnd.Render.prototype._setPaperSize = function (sz)
 {
 	var z = this.zoom;
+	console.log('_setPaperSize called');
+	console.log(sz);
 	this.paper.setSize(sz.x * z, sz.y * z);
 	this.setViewBox(z);
 };

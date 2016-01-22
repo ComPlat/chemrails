@@ -17,6 +17,7 @@ ui.standalone = false;
 ui.forwardExceptions = false;
 
 ui.base_url = window.location.origin;
+ui.assets_base_url = window.location.origin + '/assets/ketcher/';
 ui.api_path = ui.base_url + '/api/v1/ketcher/';
 
 ui.scale = 40;
@@ -131,7 +132,7 @@ ui.initTemplates = function ()
     }
 
     // Init templates
-    new Ajax.Request(ui.base_url + 'templates.sdf',
+    new Ajax.Request(ui.assets_base_url + 'templates.sdf',
     {
         method: 'get',
         requestHeaders: {Accept: 'application/octet-stream'},

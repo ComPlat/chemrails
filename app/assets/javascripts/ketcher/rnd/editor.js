@@ -1134,7 +1134,16 @@ rnd.Editor.RGroupAtomTool.prototype.OnMouseUp = function(event) {
     }
 };
 
-rnd.Editor.PolymerTool = rnd.Editor.RGroupAtomTool;
+rnd.Editor.PolymerTool = function(editor) {
+    this.editor = editor;
+
+    this._hoverHelper = new rnd.Editor.EditorTool.HoverHelper(this);
+};
+
+rnd.Editor.PolymerTool.prototype = new rnd.Editor.EditorTool();
+rnd.Editor.PolymerTool.prototype.OnMouseMove = function(event) {
+    this._hoverHelper.hover(this.editor.render.findItem(event, ['atoms']));
+};
 
 rnd.Editor.PolymerTool.prototype.OnMouseUp = function(event) {
     var ci = this.editor.render.findItem(event, ['atoms']);
@@ -1173,7 +1182,7 @@ rnd.Editor.PolymerTool.prototype.OnMouseUp = function(event) {
                         newProps.label = 'C';
                         newProps.aam = atom.aam;
                     }
-										newProps.isPolymer = true;
+										//newProps.isPolymer = true;
                     this.editor.ui.addUndoAction(this.editor.ui.Action.fromAtomsAttrs(ci.id, newProps), true);
                     this.editor.ui.render.update();
                 }

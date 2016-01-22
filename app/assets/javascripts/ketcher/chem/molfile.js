@@ -52,15 +52,16 @@ chem.Molfile.partitionLineFixed = function (/*string*/ str, /*int*/ itemLength, 
 
 chem.Molfile.parseCTFile = function (molfileLines)
 {
-    var ret = null;
+  var ret = null;
 	if (molfileLines[0].search("\\$RXN") == 0)
 		ret = chem.Molfile.parseRxn(molfileLines);
 	else
 		ret = chem.Molfile.parseMol(molfileLines);
-    ret.initHalfBonds();
-    ret.initNeighbors();
-    ret.markFragments();
-    return ret;
+
+  ret.initHalfBonds();
+  ret.initNeighbors();
+  ret.markFragments();
+  return ret;
 };
 
 chem.Molfile.fmtInfo = {
@@ -932,6 +933,7 @@ chem.Molfile.parseMol = function (/* string */ ctabLines) /* chem.Struct */
     }
     var struct = this.parseCTab(ctabLines.slice(3));
     struct.name = ctabLines[0].strip();
+		this.parseAdditionalData(ctabLines, struct);
     return struct;
 };
 
@@ -947,6 +949,20 @@ chem.Molfile.parseCTab = function (/* string */ ctabLines) /* chem.Struct */
 		return this.parseCTabV3000(ctabLines, !chem.Molfile.loadRGroupFragments);
 	else
 		throw Error("Molfile version unknown: " + version);
+};
+
+chem.Molfile.parseAdditionalData = function (/* Array */ ctabLines, /*struct */ struct) /* chem.Struct */
+{
+	ctabLines.each(function(line, index){
+		var polymersFound = line.search('PolymersList');
+		if(polymersFound > 0){
+			ctabLines[index + 1].strip().split(' ').each(function (id){
+				//this.molecule.polymers.add({ id : id});
+				if(struct.atoms.get(id))
+					struct.atoms.get(id).isPolymer = true;
+			});
+		}
+	});
 };
 
 chem.MolfileSaver = function (v3000)
@@ -1095,7 +1111,7 @@ chem.MolfileSaver.prototype.saveMolecule = function (molecule, skipSGroupErrors,
 
 	// TODO: saving to V3000
 	this.writeCTab2000();
-
+	this.writeAdditionalData();
 	return this.molfile;
 };
 
@@ -1180,6 +1196,10 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
     var atomLabel_list = [];
 	this.molecule.atoms.each(function (id, atom)
 	{
+		if(atom.isPolymer) {
+			this.molecule.polymers.add({ id : id});
+		}
+
 		this.writePaddedFloat(atom.pp.x, 10, 4);
 		this.writePaddedFloat(-atom.pp.y, 10, 4);
 		this.writePaddedFloat(0, 10, 4);
@@ -1430,6 +1450,16 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
 	// TODO: write M  LOG
 
 	this.writeCR('M  END');
+};
+
+chem.MolfileSaver.prototype.writeAdditionalData = function (){
+	var additional_data = '> <PolymersList>\n';
+	this.molecule.polymers.each(function (index, obj) {
+		additional_data += obj.id.toString();
+		additional_data += ' ';
+	});
+	additional_data += '\n$$$$\n';
+	this.writeCR(additional_data);
 };
 
 chem.Molfile.parseRxn = function (/* string[] */ ctabLines) /* chem.Struct */

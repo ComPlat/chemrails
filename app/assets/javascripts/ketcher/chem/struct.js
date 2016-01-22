@@ -27,7 +27,7 @@ chem.Struct = function ()
 	this.rxnPluses = new util.Pool();
     this.frags = new util.Pool();
     this.rgroups = new util.Map();
-		this.polymers = new util.Map(); // init polymers list as well
+		this.polymers = new util.Pool(); // init polymers list as well
     this.name = '';
     this.sGroupForest = new chem.SGroupForest(this);
 };
@@ -1176,8 +1176,6 @@ chem.Struct.prototype.prepareLoopStructure = function () {
 
 chem.Struct.prototype.atomAddToSGroup = function (sgid, aid) {
     // TODO: [MK] make sure the addition does not break the hierarchy?
-		console.log('atom added');
-		console.log(aid);
     chem.SGroup.addAtom(this.sgroups.get(sgid), aid);
     util.Set.add(this.atoms.get(aid).sgs, sgid);
 }

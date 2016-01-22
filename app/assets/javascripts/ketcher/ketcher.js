@@ -17,7 +17,7 @@ ketcher = function () {
 ketcher.version = "1.1-beta";
 
 ketcher.init = function (parameters, opt)
-{    
+{
     document.title += ' v' + ketcher.version;
 	ketcher.button_areas = {};
 	var elemLabelOpts = {'fontSize':25};
@@ -47,6 +47,24 @@ ketcher.getMolfile = function ()
 {
     var saver = new chem.MolfileSaver();
     return saver.saveMolecule(ui.ctab, true);
+};
+
+ketcher.getSVG = function ()
+{
+    var svg_data = '<?xml version="1.0"?>'
+    var wrapper = $$('table#ketcher_window div#client_area')[0];
+    //console.log(wrapper.innerHTML);
+
+    //var w = 600;
+    //var h = 400;
+    //var paper = Raphael("wrapper");
+    //console.log(paper);
+    //paper.setViewBox(0,0,w,h,true);
+    //paper.setSize('100%', '100%');
+
+    console.log('--------------------------------------------------------');
+    console.log(wrapper.innerHTML);
+    return svg_data.concat(wrapper.innerHTML);
 };
 
 ketcher.setMolecule = function (mol_string)

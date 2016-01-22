@@ -186,8 +186,6 @@ chem.SGroup.clone = function (sgroup, aidMap, bidMap)
 
 chem.SGroup.addAtom = function (sgroup, aid)
 {
-    console.log('adding atom');
-    console.log(aid);
     sgroup.atoms.push(aid);
 };
 
