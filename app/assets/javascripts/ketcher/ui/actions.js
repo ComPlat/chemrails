@@ -122,7 +122,6 @@ ui.Action.fromMultipleMove = function (lists, d)
 
 ui.Action.fromAtomsAttrs = function(ids, attrs, reset)
 {
-    // console.log('fromAtomsAttrs called');
     var action = new ui.Action();
     (typeof(ids) == 'number' ? [ids] : ids).each(function(id) {
 	for (var key in chem.Struct.Atom.attrlist) {
@@ -181,7 +180,6 @@ ui.Action.fromSelectedBondsAttrs = function (attrs, flips)
 
 ui.Action.fromAtomAddition = function (pos, atom)
 {
-    //console.log('fromAtomAddition called');
     atom = Object.clone(atom);
     var action = new ui.Action();
     atom.fragment = action.addOp(new ui.Action.OpFragmentAdd().perform(ui.editor)).frid;

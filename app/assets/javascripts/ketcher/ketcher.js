@@ -53,17 +53,7 @@ ketcher.getSVG = function ()
 {
     var svg_data = '<?xml version="1.0"?>'
     var wrapper = $$('table#ketcher_window div#client_area')[0];
-    //console.log(wrapper.innerHTML);
 
-    //var w = 600;
-    //var h = 400;
-    //var paper = Raphael("wrapper");
-    //console.log(paper);
-    //paper.setViewBox(0,0,w,h,true);
-    //paper.setSize('100%', '100%');
-
-    console.log('--------------------------------------------------------');
-    console.log(wrapper.innerHTML);
     return svg_data.concat(wrapper.innerHTML);
 };
 
