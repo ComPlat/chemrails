@@ -2,32 +2,76 @@ require 'nokogiri'
 
 module ChemRails
   class SVGProcessor
-    attr_accessor :margin
-    attr_reader :min,:max,:svg
+    attr_accessor :margins, :remove_internal_transform
+    attr_reader :min,:max,:svg,:shift
 
     def initialize(svg="")
-      @svg = Nokogiri::HTML(svg)
+      @svg = Nokogiri::XML(svg)
       @min,@max=[nil,nil],[nil,nil]
-      @margin=[10,10]
-      paths
+      @margins=[10,10]
+      #@remove_internal_transform = true
+      @transforms = []
+      @shift=[nil,nil]
     end
 
     def paths
-      @paths = @svg.xpath("//path")
+      @paths = @svg.css("//path")
     end
 
     def circles
-      @circles = @svg.at_css("circle")
+      @circles = @svg.css("//circle")
     end
 
-    def splitxy_for_path_at(ind)
-      d(paths[ind])
+    def texts
+      @texts = @svg.css("//text")
+    end
+
+
+    def find_extrema
+      get_internal_transform_shift
+      #remove_all_internal_transform if remove_internal_transform
+      path_extrema
+      circle_extrema
+      text_extrema
+      shift_extrema
+      self
+    end
+
+    def get_internal_transform_shifts
+      paths.each do |path|
+        transformation = path["transform"]
+        if transformation.match(/^matrix/)
+          matrix = get_matrix_from_transform_matrix(transformation)
+          shift = get_translation_from_matrix(matrix)
+        elsif transformation.match(/^translate/)
+          shift = get_translation_from_transform_translate(transformation)
+        end
+
+        @transforms << shift
+      end
+    end
+
+    def get_internal_transform_shift
+      get_internal_transform_shifts
+      @shift=transform_count
+    end
+
+    def remove_all_internal_transform
+      [paths,circles].each do |node_set|
+        node_set.each{|node| node["transform"]=""}
+      end
+    end
+
+    def centered_and_scaled_svg
+      find_extrema
+      center_and_scale
+      to_xml
     end
 
 
     def path_extrema(ind=nil)
       if ind
-        splitxy_for_path_at(ind)
+        splitxy_for_path(ind)
         minmax
         return [@min,@max]
       end
@@ -37,49 +81,113 @@ module ChemRails
       end
     end
 
+    def text_extrema
+      texts.each do |text|
+        if !text["style"].match(/display:\s*none/)
+          coordinates = splitxy_for_text(text)
+          minmax(coordinates)
+        end
+      end
+    end
+
     def circle_extrema
       circles.each do |circle|
         if !circle["style"].match(/display:\s*none/)
+          circle["transform"] = ""
           coordinates = splitxy_for_circle(circle)
           minmax(coordinates)
         end
       end
     end
 
-    def viewbox
-      @viewbox = @svg.xpath("//svg")[0]["viewbox"]#.split(/,| /)
+    def shift_extrema
+      shiftx,shifty = *@shift
+      minx,miny = *@min
+      maxx,maxy = *@max
+      @min=[minx+shiftx, miny+shifty]
+      @max=[maxx+shiftx, maxy+shifty]
     end
 
-    def recenter
-      return if ([@min,@max].flatten.compact.empty?)
-       minx,miny = *@min
-       maxx,maxy = *@max
-       marx,mary = *@margin
-       x,y,width,height = minx,miny,maxx-minx+marx,maxy-miny+mary
-       if minx < marx
-         #todo apply transformation: translate everything by marx-minx
-         x = 0
-       else
-         x = minx - marx
-         width += marx
-       end
-       if miny < mary
-         #todo apply transformation: translate everything by marx-minx
-         y = 0
-       else
-         y = miny - mary
-         height += mary
-       end
 
-       vb="%i %i %i %i" %[x,y,width,height]
-       @svg.at_css("svg")["viewbox"]=vb
+    def viewbox
+      @viewbox = @svg.at_css("svg")["viewbox"]#.split(/,| /)
+    end
+
+    def preserve_aspect_ratio(t="xMinYMin")
+      @svg.at_css("svg")["preserveAspectRatio"]=t
+      self
+    end
+
+    def center_and_scale
+      return if ([@min,@max].flatten.compact.empty?)
+      svg = @svg.at_css("svg")
+      marx,mary = *@margins
+      height = svg["height"].to_f-mary*2
+      width = svg["width"].to_f-marx*2
+      minx,miny = *@min
+      maxx,maxy = *@max
+      w,h = maxx-minx,maxy-miny
+      scale_low,scale_high = *([width/w , height/h].sort)
+
+      if width/w <height/h
+        #then recenter along y
+        translation = [-minx*scale_low+marx,-miny*scale_low+mary+(scale_high-scale_low)*h/2]
+      else
+        #recenter along x
+        translation = [-minx*scale_low+marx+(scale_high-scale_low)*w/2,-miny*scale_low+mary]
+      end
+
+      translate = "translate(%i,%i) " %translation
+      scale = "scale(%.2f) " %scale_low
+      if g = @svg.at_css("svg g")
+        #todo
+      else
+        svg = @svg.at_css("svg")
+        children = svg.children
+        transform ="<g transform=\""   + translate + scale+ "\"></g>"
+        svg.prepend_child(transform)
+        g=svg.at_css("g")
+        children.each{ |node| node.parent=g   }
+      end
+    end
+
+    def to_xml
+      @svg.to_xml
     end
 
     private
 
-    def d(node)
-      d=node["d"]
-      @d=splitxy(d)
+    def transform_count
+      transforms=[]
+      counts=[]
+      @transforms.sort.each do | trans|
+        if transforms[-1] == trans
+          counts[-1] += 1
+        else
+          transforms << trans
+          counts << 1
+        end
+      end
+
+      transforms[counts.index(counts.max)]
+    end
+
+
+    def get_translation_from_transform_translate(transformation)
+      transformation.match(/translate\( ([-+]?\d+\.?\d*)\s*(,\s*([-+]?\d+\.?\d*))?\)/)
+      translation =[$1.to_f,$1.to_f] if $1
+      translation[1]=$3.to_f if $3
+      tranlation||=nil
+    end
+
+    def get_matrix_from_transform_matrix(transform_matrix)
+      transform_matrix.match(/matrix\(([-+]?\d+\.?\d*)\s*,\s*([-+]?\d+\.?\d*)\s*,([-+]?\d+\.?\d*)\s*,([-+]?\d+\.?\d*)\s*,([-+]?\d+\.?\d*)\s*,([-+]?\d+\.?\d*)\s*\)/)
+       [$1.to_f, $2.to_f, $3.to_f, $4.to_f, $5.to_f, $6.to_f ]
+    end
+
+    def get_translation_from_matrix(matrix)
+      # only valid if a,b,c,d = 1,0,0,1
+      [matrix[4],matrix[5]]
     end
 
     def minmax(d=@d)
@@ -98,11 +206,14 @@ module ChemRails
     def maxi(new_value)
       x,y = *new_value
       x0,y0 = *@max
-      p [x,y,x0,y0]
       @max=[ x >= (x0||x) && x || x0, y >= (y0||y) && y || y0]
     end
 
-
+    def splitxy_for_text(text)
+      x,y,font=text["x"].to_f,text["y"].to_f,(text["font"].match(/(\d+\.?\d*)px/) && $1).to_f
+      l=text.content.size
+      [[x,y],[x+font*l,y+font]]
+    end
     def splitxy_for_circle(circle)
       cx,cy,r=circle["cx"].to_f,circle["cy"].to_f,circle["r"].to_f
       [[cx-r,cy-r],[cx+r,cy+r]]
@@ -131,7 +242,6 @@ module ChemRails
           data.match(/[-+]?(\d+\.?\d*)\s*,?\s*/) && (origin,data = [origin[0],$1.to_f+origin[1]],$') && splitted<<origin
         when "Z"
         when "z"
-
         #todo cubic bezier https://www.w3.org/TR/SVG/paths.html#PathData
         when "s"
         when "S"
