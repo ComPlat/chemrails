@@ -93,7 +93,7 @@ module ChemRails
     def circle_extrema
       circles.each do |circle|
         if !circle["style"].match(/display:\s*none/)
-          circle["transform"] = ""
+          
           coordinates = splitxy_for_circle(circle)
           minmax(coordinates)
         end
