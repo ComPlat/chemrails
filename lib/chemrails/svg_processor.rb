@@ -5,10 +5,15 @@ module ChemRails
     attr_accessor :margins, :remove_internal_transform
     attr_reader :min,:max,:svg,:shift
 
-    def initialize(svg="")
+    def initialize(svg="",**options)
       @svg = Nokogiri::XML(svg)
       @min,@max=[nil,nil],[nil,nil]
-      @margins=[10,10]
+      @margins= (options[:margins].is_a?(Array)&& options[:margins])  || [10,10]
+      svg = @svg.at_css("svg")
+      original_w = svg  && svg["width"].to_f
+      original_h = svg  && svg["height"].to_f
+      @width = (options[:width].is_a?(Integer) && options[:width]) || original_w
+      @height = (options[:height].is_a?(Integer) && options[:height]) || original_h
       #@remove_internal_transform = true
       @transforms = []
       @shift=[nil,nil]
@@ -26,6 +31,21 @@ module ChemRails
       @texts = @svg.css("//text")
     end
 
+    def clean
+      @svg.search('rect').each do |rect|
+        if [rect["x"],rect["y"],rect["width"],rect["height"]]== ["0","0","10","10"]
+          rect.remove
+        end
+      end
+      @svg.search('desc').each(&:remove)
+
+    end
+
+    def redefine_window_size
+      svg=@svg.at_css("svg")
+      svg["width"] = @width
+      svg["height"] = @height
+    end
 
     def find_extrema
       get_internal_transform_shift
@@ -63,8 +83,10 @@ module ChemRails
     end
 
     def centered_and_scaled_svg
+      clean
       find_extrema
       center_and_scale
+      redefine_window_size
       to_xml
     end
 
@@ -93,7 +115,7 @@ module ChemRails
     def circle_extrema
       circles.each do |circle|
         if !circle["style"].match(/display:\s*none/)
-          
+
           coordinates = splitxy_for_circle(circle)
           minmax(coordinates)
         end
