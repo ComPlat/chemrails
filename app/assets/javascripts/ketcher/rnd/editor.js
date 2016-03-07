@@ -1182,7 +1182,7 @@ rnd.Editor.PolymerTool.prototype.OnMouseUp = function(event) {
                         newProps.label = 'C';
                         newProps.aam = atom.aam;
                     }
-										//newProps.isPolymer = true;
+										newProps.isPolymer = true;
                     this.editor.ui.addUndoAction(this.editor.ui.Action.fromAtomsAttrs(ci.id, newProps), true);
                     this.editor.ui.render.update();
                 }
