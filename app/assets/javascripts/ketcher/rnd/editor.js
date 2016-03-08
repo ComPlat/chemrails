@@ -1146,48 +1146,39 @@ rnd.Editor.PolymerTool.prototype.OnMouseMove = function(event) {
 };
 
 rnd.Editor.PolymerTool.prototype.OnMouseUp = function(event) {
-    var ci = this.editor.render.findItem(event, ['atoms']);
+		// draw only one polymer item
+		var polymerItemDrawn = this.editor.render.ctab.molecule.atoms.find(
+			function(aid, atom){
+				return atom.isPolymer;
+			}
+		)
+
+		if(polymerItemDrawn != undefined){
+			return false;
+		}
+
+		var ci = this.editor.render.findItem(event, ['atoms']);
     if (!ci || ci.type == 'Canvas') {
         this._hoverHelper.hover(null);
-        this.editor.ui.showRGroupTable({
-            onOk : function(rgNew) {
-                if (rgNew) {
-                    this.editor.ui.addUndoAction(
-                        this.editor.ui.Action.fromAtomAddition(
-                            this.editor.ui.page2obj(this.OnMouseMove0.lastEvent),
-                            { label : 'R#', rglabel : rgNew, isPolymer : true}
-                        ),
-                        true
-                    );
-                    this.editor.ui.render.update();
-                }
-            }.bind(this)
-        });
+        this.editor.ui.addUndoAction(
+            this.editor.ui.Action.fromAtomAddition(
+                this.editor.ui.page2obj(this.OnMouseMove0.lastEvent),
+                { label : 'R#', rglabel : 1, isPolymer : true}
+            ),
+            true
+        );
+        this.editor.ui.render.update();
         return true;
     } else if (ci && ci.map == 'atoms') {
         this._hoverHelper.hover(null);
         var atom = this.editor.render.ctab.molecule.atoms.get(ci.id);
-        var lbOld = atom.label;
-        var rgOld = atom.rglabel;
-        this.editor.ui.showRGroupTable({
-            selection : rgOld,
-            onOk : function(rgNew) {
-                if (rgOld != rgNew || lbOld != 'R#') {
-                    var newProps = Object.clone(chem.Struct.Atom.attrlist); // TODO review: using Atom.attrlist as a source of default property values
-                    if (rgNew) {
-                        newProps.label = 'R#';
-                        newProps.rglabel = rgNew;
-                        newProps.aam = atom.aam;
-                    } else {
-                        newProps.label = 'C';
-                        newProps.aam = atom.aam;
-                    }
-										newProps.isPolymer = true;
-                    this.editor.ui.addUndoAction(this.editor.ui.Action.fromAtomsAttrs(ci.id, newProps), true);
-                    this.editor.ui.render.update();
-                }
-            }.bind(this)
-        });
+        var newProps = Object.clone(chem.Struct.Atom.attrlist); // TODO review: using Atom.attrlist as a source of default property values
+        newProps.label = 'R#';
+        newProps.rglabel = 1;
+        newProps.aam = atom.aam;
+				newProps.isPolymer = true;
+        this.editor.ui.addUndoAction(this.editor.ui.Action.fromAtomsAttrs(ci.id, newProps), true);
+        this.editor.ui.render.update();
         return true;
     }
 };
