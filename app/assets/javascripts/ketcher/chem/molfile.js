@@ -1453,6 +1453,10 @@ chem.MolfileSaver.prototype.writeCTab2000 = function (rgroups)
 };
 
 chem.MolfileSaver.prototype.writeAdditionalData = function (){
+	// return if we have no polymer-items
+	if(this.molecule.polymers.count() == 0)
+		return;
+
 	var additional_data = '> <PolymersList>\n';
 	this.molecule.polymers.each(function (index, obj) {
 		additional_data += obj.id.toString();
