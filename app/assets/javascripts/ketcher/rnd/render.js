@@ -552,7 +552,7 @@ rnd.Render.prototype.initStyles = function ()
 		'stroke':'darkgray',
 		'stroke-width':0.5*settings.lineWidth
 		};
-	this.styles.atomSelectionPlateRadius = settings.labelFontSize * 1.2 ;
+	this.styles.atomSelectionPlateRadius = settings.labelFontSize * 1.8 ;
 };
 
 rnd.Render.prototype.initSettings = function()
