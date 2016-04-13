@@ -14,19 +14,21 @@ if (typeof(ui) == 'undefined')
     ui = function () {};
 
 ui.standalone = false;
+ui.forwardExceptions = false;
 
 ui.base_url = window.location.origin;
-ui.path = ui.base_url + '/api/v1/ketcher/';
+ui.assets_base_url = window.location.origin + '/assets/ketcher/';
+ui.api_path = ui.base_url + '/api/v1/ketcher/';
 
 ui.scale = 40;
 
-ui.zoomValues = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+ui.zoomValues = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 2.0, 2.5, 3.0, 3.5, 4.0];
 ui.zoomIdx = ui.zoomValues.indexOf(1.0);
 ui.zoom = 1.0;
 
 ui.DBLCLICK_INTERVAL = 300;
 
-ui.HISTORY_LENGTH = 8;
+ui.HISTORY_LENGTH = 32;
 
 ui.DEBUG = false;
 
@@ -44,7 +46,15 @@ ui.is_osx = false;
 ui.is_touch = false;
 ui.initialized = false;
 
-ui.MODE = {SIMPLE: 1, ERASE: 2, ATOM: 3, BOND: 4, PATTERN: 5, SGROUP: 6, PASTE: 7, CHARGE: 8, RXN_ARROW: 9, RXN_PLUS: 10, CHAIN: 11};
+//console.log = function(msg)
+//{
+//    new Ajax.Request(ui.api_path + 'log', {
+//        method: 'post',
+//        asynchronous: false,
+//        parameters: {message: msg}
+//    });
+//};
+
 
 //
 // Init section
@@ -82,6 +92,93 @@ ui.initButton = function (el)
     });
 };
 
+ui.initTemplates = function ()
+{
+    function parseSdf(sdf) {
+        var items = sdf.split(/^[$][$][$][$]$/m);
+        var parsed = [];
+
+        items.each(function (item) {
+            item = item.replace(/\r/g, '');
+            item = item.strip();
+            var end_idx = item.indexOf('M  END');
+
+            if (end_idx == -1) {
+                return;
+            }
+
+            var iparsed = {};
+
+            iparsed.molfile = item.substring(0, end_idx + 6);
+            iparsed.name = item.substring(0, item.indexOf('\n')).strip();
+            item = item.substr(end_idx + 7).strip();
+
+            var entries = item.split(/^$/m);
+
+            entries.each(function (entry) {
+                entry = entry.strip();
+                if (!entry.startsWith('> <')) {
+                    return;
+                }
+                var lines = entry.split('\n');
+                var field = lines[0].strip().substring(3, lines[0].lastIndexOf('>')).strip();
+
+                iparsed[field] = parseInt(lines[1].strip()) || lines[1].strip();
+            });
+            parsed.push(iparsed);
+        });
+
+        return parsed;
+    }
+
+    // Init templates
+    new Ajax.Request(ui.assets_base_url + 'templates.sdf',
+    {
+        method: 'get',
+        requestHeaders: {Accept: 'application/octet-stream'},
+        asynchronous : false,
+        onComplete: function (res)
+        {
+            try {
+                var sdf_items = parseSdf(res.responseText);
+            } catch (er) {
+                if (ui.forwardExceptions)
+                    throw er;
+                return;
+            }
+
+            if (sdf_items.length == 0) {
+                return;
+            }
+
+            rnd.customtemplates = [];
+	    ui.customtemplate_tool_modes.clear();
+            var tbody = $('customtemplate_dropdown_list').select('table > tbody')[0];
+            tbody.update();
+
+            var idx = 0;
+            sdf_items.each(function (item) {
+                var tmpl = {
+                    name: (item.name || ('customtemplate ' + (idx+1))).capitalize(),
+                    molfile: item.molfile,
+                    aid: (item.atomid || 1) - 1,
+                    bid: (item.bondid || 1) - 1
+                };
+
+                rnd.customtemplates.push(tmpl);
+                ui.customtemplate_tool_modes.push('customtemplate_' + idx);
+
+                tbody.insert('<tr class="dropdownListItem" id="customtemplate_' + idx +
+                        '" title="' + tmpl.name + ' (Shift+T)">' + '<td><div id="customtemplate_' + idx +
+                        '_preview" style="float:right"><img style="align:right" class="dropdownIconTemplate" src="icons/png/customtemplate/customtemplate' +
+                        idx + '.dropdown.png" alt="" /></div></td><td>' + tmpl.name + '</td></tr>');
+                idx++;
+            });
+            ui.DropdownListSetIconAndTitle($('customtemplate'), $('customtemplate_0'));
+        }
+    });
+};
+
 ui.onClick_SideButton = function ()
 {
     if (this.hasClassName('buttonDisabled'))
@@ -101,6 +198,11 @@ ui.onClick_DropdownButton = function ()
     ui.toggleDropdownList(this.id);
 };
 
+ui.DropdownListSetIconAndTitle = function(dropdown, selected) {
+    dropdown.setAttribute('src', selected.select('img')[0].getAttribute('src').replace('.dropdown.','.sidebar.'));
+    dropdown.title = selected.title;
+}
+
 ui.onMouseDown_DropdownListItem = function (event)
 {
     ui.selectMode(this.id);
@@ -108,18 +210,7 @@ ui.onMouseDown_DropdownListItem = function (event)
     $(dropdown_mode_id + '_dropdown_list').hide();
     if (ui.mode_id == this.id)
     {
-        if ($(dropdown_mode_id).getAttribute('src')) {
-            $(dropdown_mode_id).setAttribute('src', this.select('img')[0].getAttribute('src'));
-        } else {
-            ketcher.showMolfileOpts(dropdown_mode_id, ketcher.templates[ui.mode_id], 20, {
-                'autoScale':true,
-                'autoScaleMargin':4,
-                'hideImplicitHydrogen':true,
-                'hideTerminalLabels':true,
-                'ignoreMouseEvents':true
-            });
-        }
-        $(dropdown_mode_id).title = this.title;
+        ui.DropdownListSetIconAndTitle($(dropdown_mode_id), this);
         $(dropdown_mode_id).setAttribute('selid', ui.mode_id);
     }
     if (event)
@@ -129,10 +220,13 @@ ui.onMouseDown_DropdownListItem = function (event)
     }
 };
 
-ui.defaultSelector = 'selector_lasso';
+ui.defaultSelector = 'selector_last';
 
-ui.init = function ()
+ui.init = function (parameters, opts)
 {
+    opts = new rnd.RenderOptions(opts);
+    parameters = parameters || {};
+    this.actionComplete = parameters.actionComplete || function(){};
     if (this.initialized)
     {
         this.Action.fromNewCanvas(new chem.Struct());
@@ -145,7 +239,7 @@ ui.init = function ()
     }
 
     this.is_osx = (navigator.userAgent.indexOf('Mac OS X') != -1);
-    this.is_touch = 'ontouchstart' in document;
+    this.is_touch = 'ontouchstart' in document && util.isNull(document.ontouchstart);
 
     // IE specific styles
     if (Prototype.Browser.IE)
@@ -166,8 +260,7 @@ ui.init = function ()
     }
 
     // OS X specific stuff
-    if (ui.is_osx)
-    {
+    if (ui.is_osx) {
         $$('.toolButton, .toolButton > img, .sideButton').each(function (button)
         {
             button.title = button.title.replace("Ctrl", "Cmd");
@@ -175,8 +268,7 @@ ui.init = function ()
     }
 
     // Touch device stuff
-    if (ui.is_touch)
-    {
+    if (ui.is_touch) {
         EventMap =
         {
             mousemove: 'touchmove',
@@ -191,8 +283,7 @@ ui.init = function ()
         //BEGIN
         rnd.ReStruct.prototype.hiddenPaths = [];
 
-        rnd.ReStruct.prototype.clearVisel = function (visel)
-        {
+        rnd.ReStruct.prototype.clearVisel = function (visel) {
             for (var i = 0; i < visel.paths.length; ++i) {
                 visel.paths[i].hide();
                 this.hiddenPaths.push(visel.paths[i]);
@@ -202,10 +293,26 @@ ui.init = function ()
         //END
     }
 
+    if (['http:','https:'].indexOf(window.location.protocol) >= 0) { // don't try to knock if the file is opened locally ("file:" protocol)
+        new Ajax.Request(ui.api_path + 'knocknock', {
+            method: 'get',
+            asynchronous : false,
+            onComplete: function (res)
+            {
+                if (res.responseText == 'You are welcome!')
+                    ui.standalone = false;
+            }
+        });
+    }
+
+    if (!this.standalone)
+    	this.initTemplates();
+
     // Document events
-    document.observe('keypress', ui.onKeyPress_Ketcher);
-    document.observe('keydown', ui.onKeyDown_IE);
-    document.observe('keyup', ui.onKeyUp);
+    //document.observe('keypress', ui.onKeyPress_Ketcher);
+    //document.observe('keydown', ui.onKeyDown_IE);
+    //document.observe('keyup', ui.onKeyUp);
+    ui.setKeyboardShortcuts();
     document.observe(EventMap['mousedown'], ui.onMouseDown_Ketcher);
     document.observe(EventMap['mouseup'], ui.onMouseUp_Ketcher);
 
@@ -259,7 +366,7 @@ ui.init = function ()
     $$('.dialogWindow').each(function (el)
     {
         el.observe('keypress', ui.onKeyPress_Dialog);
-        el.observe('keyup', ui.onKeyUp);
+        el.observe('keyup', ui.onKeyPress_Dialog);
     });
 
     // Atom properties dialog events
@@ -294,19 +401,7 @@ ui.init = function ()
         this.hide();
     });
     $('input_label').observe('keypress', ui.onKeyPress_InputLabel);
-    $('input_label').observe('keyup', ui.onKeyUp);
-
-    // Element table
-    $('elem_table_cancel').observe('click', function ()
-    {
-        ui.elem_table_obj.restore();
-        ui.hideDialog('elem_table');
-    });
-    $('elem_table_ok').observe('click', function (event)
-    {
-        ui.hideDialog('elem_table');
-        ui.onClick_SideButton.apply($('atom_table'), [event]);
-    });
+    $('input_label').observe('keyup', ui.onKeyUp_InputLabel);
 
     // Load dialog events
     $('radio_open_from_input').observe('click', ui.onSelect_OpenFromInput);
@@ -337,51 +432,52 @@ ui.init = function ()
         ui.hideDialog('save_file');
     });
 
+
+    var zoom_list = $('zoom_list');
+    while (zoom_list.options.length > 0) {
+        zoom_list.options.remove(0);
+    }
+    for (var z = 0; z < ui.zoomValues.length; ++z) {
+        var opt = document.createElement('option');
+	opt.text = (100*ui.zoomValues[z]).toFixed(0) + '%';
+	opt.value = z;
+	zoom_list.options.add(opt);
+    }
+    zoom_list.selectedIndex = ui.zoomIdx;
+    zoom_list.observe('change', function(){
+        ui.zoomSet(zoom_list.value-0);
+	zoom_list.blur();
+    });
+
     ui.onResize_Ketcher();
-    if (Prototype.Browser.IE)
-    {
+    if (Prototype.Browser.IE) {
         ui.client_area.absolutize(); // Needed for clipping and scrollbars in IE
         $('ketcher_window').observe('resize', ui.onResize_Ketcher);
     }
 
-    new Ajax.Request(ui.path + 'knocknock',
-    {
-        method: 'get',
-        asynchronous : false,
-        onComplete: function (res)
-        {
-            if (res.responseText == 'You are welcome!')
-                ui.standalone = false;
-        }
-    });
-
-    if (this.standalone)
-    {
-        $$('.serverRequired').each(function (el)
-        {
+    if (this.standalone) {
+        $$('.serverRequired').each(function(el) {
             if (el.hasClassName('toolButton'))
                 el.addClassName('buttonDisabled');
             else
                 el.hide();
         });
         document.title += ' (standalone)';
-    } else
-    {
-        if (ui.path != '/')
-        {
-            $('upload_mol').action = ui.base_url + 'open';
-            $('download_mol').action = ui.base_url + 'save';
-        }
+    } else {
+            $('upload_mol').action = ui.api_path + 'open';
+            $('download_mol').action = ui.api_path + 'save';
     }
 
     // Init renderer
-    this.render =  new rnd.Render(this.client_area, ui.scale, {atomColoring: true});
+    opts.atomColoring = true;
+    this.render =  new rnd.Render(this.client_area, ui.scale, opts);
     this.editor = new rnd.Editor(this.render);
 
     this.selectMode('selector_lasso');
 
     this.render.onCanvasOffsetChanged = this.onOffsetChanged;
 
+    ui.setScrollOffset(0, 0);
     this.render.setMolecule(this.ctab);
     this.render.update();
 
@@ -410,26 +506,7 @@ ui.toggleDropdownList = function (name)
     if ($(list_id).visible())
         $(list_id).hide();
     else
-    {
         $(list_id).show();
-        if ($(list_id).hasClassName('renderFirst'))
-        {
-            var renderOpts = {
-                'autoScale':true,
-                'autoScaleMargin':4,
-                'hideImplicitHydrogen':true,
-                'hideTerminalLabels':true
-            };
-
-            $(list_id).select("tr").each(function (item)
-            {
-                if ($(item.id + '_preview'))
-                    ketcher.showMolfileOpts(item.id + '_preview', ketcher.templates[item.id], 20, renderOpts);
-            });
-
-            $(list_id).removeClassName('renderFirst');
-        }
-    }
 };
 
 
@@ -449,8 +526,7 @@ ui.updateMolecule = function (mol)
     if (typeof(mol) == 'undefined' || mol == null)
         return;
 
-    if (ui.selected())
-        ui.updateSelection();
+    ui.editor.deselectAll();
 
     this.addUndoAction(this.Action.fromNewCanvas(mol));
 
@@ -464,6 +540,8 @@ ui.updateMolecule = function (mol)
             ui.setZoomCentered(null, ui.render.getStructCenter());
         } catch (er)
         {
+            if (ui.forwardExceptions)
+                throw er;
             alert(er.message);
         } finally
         {
@@ -479,27 +557,35 @@ ui.parseCTFile = function (molfile, check_empty_line)
     if (lines.length > 0 && lines[0] == 'Ok.')
         lines.shift();
 
-    try
-    {
+    try {
         try {
             return chem.Molfile.parseCTFile(lines);
         } catch (ex) {
+            if (ui.forwardExceptions)
+                throw ex;
             if (check_empty_line) {
                 try {
                 // check whether there's an extra empty line on top
                 // this often happens when molfile text is pasted into the dialog window
                     return chem.Molfile.parseCTFile(lines.slice(1));
-                } catch (ex1) {}
+                } catch (ex1) {
+                    if (ui.forwardExceptions)
+                        throw ex1;
+                }
                 try {
                 // check for a missing first line
                 // this sometimes happens when pasting
                     return chem.Molfile.parseCTFile([''].concat(lines));
-                } catch (ex2) {}
+                } catch (ex2) {
+                    if (ui.forwardExceptions)
+                        throw ex2;
+                }
             }
             throw ex;
         }
-    } catch (er)
-    {
+    } catch (er) {
+        if (ui.forwardExceptions)
+            throw er;
         alert("Error loading molfile.\n"+er.toString());
         return null;
     }
@@ -510,11 +596,24 @@ ui.parseCTFile = function (molfile, check_empty_line)
 //
 ui.selectMode = function (mode)
 {
+    if (mode.startsWith('selector_')) {
+        if (mode == 'selector_last') {
+            mode = this.selector_last || 'selector_lasso';
+        } else {
+            this.selector_last = mode;
+        }
+    }
     if (mode == 'reaction_automap') {
         ui.showAutomapProperties({
             onOk: function(mode) {
-                var moldata = new chem.MolfileSaver().saveMolecule(ui.ctab/*.clone()*/, true);
-                new Ajax.Request(ui.path + 'automap',
+		var mol = ui.ctab;
+		var implicitReaction = mol.addRxnArrowIfNecessary();
+		if (mol.rxnArrows.count() == 0) {
+		    alert("Auto-Mapping can only be applied to reactions");
+		    return;
+		}
+		var moldata = new chem.MolfileSaver().saveMolecule(mol, true);
+                new Ajax.Request(ui.api_path + 'automap',
                 {
                     method: 'post',
                     asynchronous : true,
@@ -522,6 +621,10 @@ ui.selectMode = function (mode)
                     onComplete: function (res)
                     {
                         if (res.responseText.startsWith('Ok.')) {
+			    var resmol = ui.parseCTFile(res.responseText);
+			    if (implicitReaction) {
+				resmol.rxnArrows.clear();
+			    }
 /*
                             var aam = ui.parseCTFile(res.responseText);
                             var action = new ui.Action();
@@ -530,11 +633,15 @@ ui.selectMode = function (mode)
                             }
                             ui.addUndoAction(action, true);
 */
-                            ui.updateMolecule(ui.parseCTFile(res.responseText));
+                            ui.updateMolecule(resmol);
 /*
                             ui.render.update();
 */
                         }
+                        else if (res.responseText.startsWith('Error.'))
+                            alert(res.responseText.split('\n')[1]);
+                        else
+                            throw new Error('Something went wrong' + res.responseText);
                     }
                 });
             }
@@ -542,19 +649,18 @@ ui.selectMode = function (mode)
         return;
     }
 
-    if (mode != null)
-    {
+    if (mode != null) {
         if ($(mode).hasClassName('buttonDisabled'))
             return;
 
-        if (ui.selected()) {
+        if (ui.editor.hasSelection()) {
             if (mode == 'select_erase') {
                 ui.removeSelected();
                 return;
             }
             // BK: TODO: add this ability to mass-change atom labels to the keyboard handler
             if (mode.startsWith('atom_')) {
-                ui.addUndoAction(ui.Action.fromSelectedAtomsAttrs(ui.atomLabel(mode)), true);
+                ui.addUndoAction(ui.Action.fromAtomsAttrs(ui.editor.getSelection().atoms, ui.atomLabel(mode)), true);
                 ui.render.update();
                 return;
             }
@@ -568,6 +674,15 @@ ui.selectMode = function (mode)
                 return;
             }
         } */
+        if (mode.startsWith('transform_flip_')) {
+            if (mode.endsWith('h')) {
+                ui.addUndoAction(ui.Action.fromFlip(ui.editor.getSelection(), 'horizontal'), true);
+            } else {
+                ui.addUndoAction(ui.Action.fromFlip(ui.editor.getSelection(), 'vertical'), true);
+            }
+            ui.render.update();
+            return;
+        }
     }
 
     if (this.mode_id != null && this.mode_id != mode) {
@@ -581,7 +696,8 @@ ui.selectMode = function (mode)
             $(this.mode_id).removeClassName('buttonSelected');
     }
 
-    this.editor.deselectAll();
+    if (mode != 'transform_rotate')
+        this.editor.deselectAll();
 
     if (this.render.current_tool)
         this.render.current_tool.OnCancel();
@@ -659,303 +775,168 @@ ui.onClick_NewFile = function ()
 
     ui.selectMode(ui.defaultSelector);
 
-    if (!ui.ctab.isBlank())
-    {
+    if (!ui.ctab.isBlank()) {
         ui.addUndoAction(ui.Action.fromNewCanvas(new chem.Struct()));
         ui.render.update();
     }
 };
 
-//
-// Hot keys
-//
-ui.onKeyPress_Ketcher = function (event)
-{
-    util.stopEventPropagation(event);
+ui.onKeyPress_Pre = function (action, event, handler, doNotStopIfCoverIsVisible) {
+    util.stopEventPropagation(event); // TODO: still need this?
 
-    if ($('window_cover').visible())
-        return util.preventDefault(event);
+    if ($('window_cover').visible() && !doNotStopIfCoverIsVisible)
+        return false;
 
     //rbalabanov: here we try to handle event using current editor tool
     //BEGIN
     if (ui && ui.render.current_tool) {
-        if (ui.render.current_tool.processEvent('OnKeyPress', event)) {
-            return util.preventDefault(event);
-        }
+        ui.render.resetLongTapTimeout(true);
+        if (ui.render.current_tool.processEvent('OnKeyPress', event, action))
+            return false;
     }
     //END
 
-    switch (Prototype.Browser.IE ? event.keyCode : event.which)
-    {
-    case 43: // +
-    case 61:
-        ui.onClick_ZoomIn.call($('zoom_in'));
-        return util.preventDefault(event);
-    case 45: // -
-    case 95:
-        ui.onClick_ZoomOut.call($('zoom_out'));
-        return util.preventDefault(event);
-    case 8: // Back space
-        if (ui.is_osx && ui.selected())
-            ui.removeSelected();
-        return util.preventDefault(event);
-    case 48: // 0
-        ui.onMouseDown_DropdownListItem.call($('bond_any'));
-        return util.preventDefault(event);
-    case 49: // 1
-        var singles = ['bond_single', 'bond_up', 'bond_down', 'bond_updown'];
-        ui.onMouseDown_DropdownListItem.call($(singles[(singles.indexOf(ui.mode_id) + 1) % singles.length]));
-        return util.preventDefault(event);
-    case 50: // 2
-        var doubles = ['bond_double', 'bond_crossed'];
-        ui.onMouseDown_DropdownListItem.call($(doubles[(doubles.indexOf(ui.mode_id) + 1) % doubles.length]));
-        return util.preventDefault(event);
-    case 51: // 3
-        ui.onMouseDown_DropdownListItem.call($('bond_triple'));
-        return util.preventDefault(event);
-    case 52: // 4
-        ui.onMouseDown_DropdownListItem.call($('bond_aromatic'));
-        return util.preventDefault(event);
-    case 53: // 5
-        var charge = ['charge_plus', 'charge_minus'];
-        ui.selectMode(charge[(charge.indexOf(ui.mode_id) + 1) % charge.length]);
-        return util.preventDefault(event);
-    case 66: // Shift+B
-        ui.selectMode('atom_br');
-        return util.preventDefault(event);
-    case 67: // Shift+C
-        ui.selectMode('atom_cl');
-        return util.preventDefault(event);
-    case 82: // Shift+R
-        ui.selectMode('rgroup');
-        return util.preventDefault(event);
-    case 90: // Ctrl+Shift+Z
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Redo.call($('redo'));
-        return util.preventDefault(event);
-    case 97: // a
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.selectAll();
-        else
-            ui.selectMode('atom_any');
-        return util.preventDefault(event);
-    case 99: // c
-        if (!event.altKey)
-        {
-            if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-                ui.onClick_Copy.call($('copy'));
-            else if (!event.metaKey)
-                ui.selectMode('atom_c');
-        }
-        return util.preventDefault(event);
-    case 102: // f
-        ui.selectMode('atom_f');
-        return util.preventDefault(event);
-    case 103: // Ctrl+G
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_SideButton.call($('sgroup'));
-        return util.preventDefault(event);
-    case 104: // h
-        ui.selectMode('atom_h');
-        return util.preventDefault(event);
-    case 105: // i
-        ui.selectMode('atom_i');
-        return util.preventDefault(event);
-    case 108: // Ctrl+L
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_CleanUp.call($('clean_up'));
-        return util.preventDefault(event);
-    case 110: // n or Ctrl+N
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_NewFile.call($('new'));
-        else
-            ui.selectMode('atom_n');
-        return util.preventDefault(event);
-    case 111: // o or Ctrl+O
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_OpenFile.call($('open'));
-        else
-            ui.selectMode('atom_o');
-        return util.preventDefault(event);
-    case 112: // p
-        ui.selectMode('atom_p');
-        return util.preventDefault(event);
-    case 115: // s or Ctrl+S
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_SaveFile.call($('save'));
-        else
-            ui.selectMode('atom_s');
-        return util.preventDefault(event);
-    case 116: // t
-        if (ui.mode_id.startsWith('template_')) {
-            var templates = rnd.Editor.TemplateTool.prototype.templates;
-            ui.onMouseDown_DropdownListItem.apply(
-                { id : 'template_' + (parseInt(ui.mode_id.split('_')[1]) + 1) % templates.length }
-            );
-        } else {
-            ui.onMouseDown_DropdownListItem.apply({ id : $('template').getAttribute('selid') });
-        }
-        return util.preventDefault(event);
-    case 118: // Ctrl+V
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Paste.call($('paste'));
-        return util.preventDefault(event);
-    case 120: // Ctrl+X
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Cut.call($('cut'));
-        return util.preventDefault(event);
-    case 122: // Ctrl+Z or Ctrl+Shift+Z (in Safari)
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-        {
-            if (event.shiftKey)
-                ui.onClick_Redo.call($('redo'));
-            else
-                ui.onClick_Undo.call($('undo'));
-        }
-        return util.preventDefault(event);
-    case 126: // ~
-        ui.render.update(true);
-        return util.preventDefault(event);
-    }
+    return true;
+}
+
+ui.keyboardShortcuts_OSX = {
+    remove_selected: 'backspace'
+}
+
+ui.keyboardShortcuts_nonOSX = {
+    remove_selected: 'delete'
+}
+
+ui.setKeyboardShortcuts = function() {
+    var setShortcuts = function(action, shortcuts) {
+        if (!(action in ui.keyboardActions))
+            throw new Error("Keyboard action not defined for action \"" +  action + "\"");
+        if (ui.is_osx)
+            shortcuts = shortcuts.replace(/ctrl/g, '⌘');
+        key.apply(this, [shortcuts, ui.keyboardCallbackProxy(action, function(action, event, handler) {
+                if (!ui.onKeyPress_Pre(action, event, handler, ui.doNotStopIfCoverIsVisible[action]))
+                    return false;
+                var ret = ui.keyboardActions[action].call(this, event, handler);
+                if (!ret)
+                    util.preventDefault(event);
+                return ret;
+            })]);
+    };
+    util.map_each(ui.keyboardShortcuts, setShortcuts);
+    util.map_each((ui.is_osx ? ui.keyboardShortcuts_OSX : ui.keyboardShortcuts_nonOSX), setShortcuts);
 };
 
-ui.ctrlShortcuts = [65, 67, 71, 76, 78, 79, 83, 86, 88, 90];
+ui.keyboardShortcuts = {
+    copy: 'ctrl+C',
+    cut: 'ctrl+X',
+    paste: 'ctrl+V',
+    zoom_in: '=, shift+=, plus, shift+plus, equals, shift+equals',
+    zoom_out: '-, minus',
+    undo: 'ctrl+Z',
+    redo: 'ctrl+shift+Z,ctrl+Y',
+    bond_tool_any: '0',
+    bond_tool_single: '1',
+    bond_tool_double: '2',
+    bond_tool_triple: '3',
+    bond_tool_aromatic: '4',
+    select_charge_tool: '5',
+    selector: '`',
+    atom_tool_any: 'A',
+    atom_tool_h: 'H',
+    atom_tool_c: 'C',
+    atom_tool_n: 'N',
+    atom_tool_o: 'O',
+    atom_tool_s: 'S',
+    atom_tool_p: 'P',
+    atom_tool_f: 'F',
+    atom_tool_br: 'shift+B',
+    atom_tool_cl: 'shift+C',
+    atom_tool_i: 'I',
+    rgroup_tool_label: 'R',
+    rgroup_tool_select: 'shift+R',
+    select_all: 'ctrl+A',
+    sgroup_tool: 'ctrl+G',
+    cleanup_tool: 'ctrl+L',
+    new_document: 'ctrl+N',
+    open_document: 'ctrl+O',
+    save_document: 'ctrl+S',
+    rotate_tool: 'ctrl+R',
+    template_tool: 'T',
+    customtemplate_tool: 'shift+T',
+    escape: 'escape',
 
-// Button handler specially for IE to prevent default actions
-ui.onKeyDown_IE = function (event)
-{
-    if ($('window_cover').visible())
-        return true;
-
-    if (Prototype.Browser.Gecko && event.which == 46)
-    {
-        util.stopEventPropagation(event);
-        return util.preventDefault(event);
-    }
-
-    if (Prototype.Browser.WebKit && ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx)) && ui.ctrlShortcuts.indexOf(event.which) != -1)
-    {
-        // don't handle the shrtcuts in the regular fashion, e.g. saving the page, opening a document, etc.
-        util.stopEventPropagation(event);
-        return util.preventDefault(event);
-    }
-
-   if (!Prototype.Browser.IE)
-        return;
-
-    // Ctrl+A, Ctrl+C, Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+V, Ctrl+X, Ctrl+Z
-    //if ([65, 67, 78, 79, 83, 86, 88, 90].indexOf(event.keyCode) != -1 && event.ctrlKey)
-    // Ctrl+A, Ctrl+G, Ctrl+L, Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Z
-    if (ui.ctrlShortcuts.indexOf(event.keyCode) != -1 && event.ctrlKey)
-    {
-        util.stopEventPropagation(event);
-        return util.preventDefault(event);
-    }
+    force_update: 'ctrl+alt+shift+R'
 };
 
-// Button handler specially for Safari and IE
-ui.onKeyUp = function (event)
-{
-    // Esc
-    if (event.keyCode == 27)
-    {
-        if (this == document || !this.visible())
-        {
-            if (!$('window_cover').visible())
-            {
-                ui.selectMode(ui.defaultSelector);
-            }
-        } else if (this.hasClassName('dialogWindow'))
-            ui.hideDialog(this.id);
-        else
-            this.hide();
-        util.stopEventPropagation(event);
-        return util.preventDefault(event);
-    }
+ui.selector_tool_modes = ['selector_lasso', 'selector_square', 'selector_fragment'];
+ui.bond_tool_single_bonds = ['bond_single', 'bond_up', 'bond_down', 'bond_updown'];
+ui.bond_tool_double_bonds = ['bond_double', 'bond_crossed'];
+ui.charge_tool_modes = ['charge_plus', 'charge_minus'];
+ui.rgroup_tool_modes = ['rgroup_label', 'rgroup_fragment', 'rgroup_attpoints'];
+ui.template_tool_modes = ['template_0', 'template_1', 'template_2', 'template_3', 'template_4', 'template_5', 'template_6', 'template_7'];
+ui.customtemplate_tool_modes = [];
 
-    if ($('window_cover').visible())
-        return true;
+ui.keyboardActions = {
+    // sample: function(event, handler) { do_sample(); },
+    zoom_in: function() { ui.onClick_ZoomIn.call($('zoom_in')); },
+    zoom_out: function() { ui.onClick_ZoomOut.call($('zoom_out')); },
+    copy: function() { ui.onClick_Copy.call($('copy')); },
+    cut: function() { ui.onClick_Cut.call($('cut')); },
+    paste: function() { ui.onClick_Paste.call($('paste')); },
+    undo: function() { ui.onClick_Undo.call($('undo')); },
+    redo: function() { ui.onClick_Redo.call($('redo')); },
+    remove_selected: function() { if (ui.editor.hasSelection()) ui.removeSelected(); },
+    bond_tool_any: function() { ui.onMouseDown_DropdownListItem.call($('bond_any')); },
+    bond_tool_single: function() { ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.bond_tool_single_bonds, ui.mode_id))); },
+    bond_tool_double: function() { ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.bond_tool_double_bonds, ui.mode_id))); },
+    bond_tool_triple: function() { ui.onMouseDown_DropdownListItem.call($('bond_triple')); },
+    bond_tool_aromatic: function() { ui.onMouseDown_DropdownListItem.call($('bond_aromatic')); },
+    select_charge_tool: function() { ui.selectMode(util.listNextRotate(ui.charge_tool_modes, ui.mode_id)); },
+    atom_tool_any: function() { ui.selectMode('atom_any'); },
+    atom_tool_h: function() { ui.selectMode('atom_h'); },
+    atom_tool_c: function() { ui.selectMode('atom_c'); },
+    atom_tool_n: function() { ui.selectMode('atom_n'); },
+    atom_tool_o: function() { ui.selectMode('atom_o'); },
+    atom_tool_s: function() { ui.selectMode('atom_s'); },
+    atom_tool_p: function() { ui.selectMode('atom_p'); },
+    atom_tool_f: function() { ui.selectMode('atom_f'); },
+    atom_tool_br: function() { ui.selectMode('atom_br'); },
+    atom_tool_cl: function() { ui.selectMode('atom_cl'); },
+    atom_tool_i: function() { ui.selectMode('atom_i'); },
+    rgroup_tool_label: function() { /* do nothing here, this may be handled inside the tool */ },
+    rgroup_tool_select: function() { ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.rgroup_tool_modes, ui.mode_id))); },
+    select_all: function() { ui.selectAll(); },
+    sgroup_tool: function() { ui.onClick_SideButton.call($('sgroup')); },
+    cleanup_tool: function() { ui.onClick_CleanUp.call($('clean_up')); },
+    new_document: function() { ui.onClick_NewFile.call($('new')); },
+    open_document: function() { ui.onClick_OpenFile.call($('open')); },
+    save_document: function() { ui.onClick_SaveFile.call($('save')); },
+    rotate_tool: function() { ui.selectMode('transform_rotate'); },
+    template_tool: function() { ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.template_tool_modes, ui.mode_id))); },
+    customtemplate_tool: function() { if (ui.customtemplate_tool_modes.length < 1) return; ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.customtemplate_tool_modes, ui.mode_id))); },
+    escape: function(event) { if (!$('window_cover').visible()) ui.selectMode(ui.defaultSelector); },
+    selector: function() { ui.onMouseDown_DropdownListItem.call($(util.listNextRotate(ui.selector_tool_modes, ui.mode_id))); },
 
-    if (event.keyCode == 46)
-    {
-        if (ui.selected())
-            ui.removeSelected();
-        util.stopEventPropagation(event);
-        return util.preventDefault(event);
-    }
-
-    if (!Prototype.Browser.WebKit && !Prototype.Browser.IE)
-        return;
-
-    if (!(Prototype.Browser.WebKit &&
-        ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx)) &&
-        ui.ctrlShortcuts.indexOf(event.which) != -1) && (event.keyCode != 46 && Prototype.Browser.WebKit))
-        return;
-
-    if (this != document)
-        return;
-
-    util.stopEventPropagation(event);
-
-    switch (event.keyCode)
-    {
-    case 46: // Delete
-        if (ui.selected())
-            ui.removeSelected();
-        return;
-    case 65: // Ctrl+A
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.selectAll();
-        return;
-    case 67: // Ctrl+C
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Copy.call($('copy'));
-        return;
-    case 71: // Ctrl+G
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_SideButton.call($('sgroup'));
-        return;
-    case 76: // Ctrl+L
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_CleanUp.call($('clean_up'));
-        return;
-    case 78: // Ctrl+N
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_NewFile.call($('new'));
-        return;
-    case 79: // Ctrl+O
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_OpenFile.call($('open'));
-        return;
-    case 83: // Ctrl+S
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_SaveFile.call($('save'));
-        return;
-    case 86: // Ctrl+V
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Paste.call($('paste'));
-        return;
-    case 88: // Ctrl+X
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-            ui.onClick_Cut.call($('cut'));
-        return;
-    case 90: // Ctrl+Z
-        if ((event.metaKey && ui.is_osx) || (event.ctrlKey && !ui.is_osx))
-        {
-            if (event.shiftKey)
-                ui.onClick_Redo.call($('redo'));
-            else
-                ui.onClick_Undo.call($('undo'));
-        }
-        return;
-    }
+    // for dev purposes
+    force_update: function() { ui.render.update(true); }
 };
+
+// create a proxy handler to bind "action" parameter for use in the actual handler
+ui.keyboardCallbackProxy = function(action, method){
+    var action_ = action;
+    return (function(event, handler){
+        return method.call(this, action_, event, handler);
+    });
+};
+
+ui.doNotStopIfCoverIsVisible = {
+    escape:true
+}
 
 ui.onKeyPress_Dialog = function (event)
 {
     util.stopEventPropagation(event);
-    if (event.keyCode == 27)
-    {
+    if (event.keyCode === 27) {
         ui.hideDialog(this.id);
         return util.preventDefault(event);
     }
@@ -964,8 +945,7 @@ ui.onKeyPress_Dialog = function (event)
 ui.onKeyPress_InputLabel = function (event)
 {
     util.stopEventPropagation(event);
-    if (event.keyCode == 13)
-    {
+    if (event.keyCode == 13) {
         this.hide();
 
         var label = '';
@@ -1012,19 +992,26 @@ ui.onKeyPress_InputLabel = function (event)
                 charge *= -1;
         }
 
-        if (label == 'A' || label == 'Q' || label == 'X' || label == 'R' || chem.Element.getElementByLabel(label) != null)
-        {
-            ui.addUndoAction(ui.Action.fromAtomAttrs(this.atom_id, {label: label, charge: charge}), true);
+        if (label == 'A' || label == 'Q' || label == 'X' || label == 'R' || chem.Element.getElementByLabel(label) != null) {
+            ui.addUndoAction(ui.Action.fromAtomsAttrs(this.atom_id, {label: label, charge: charge}), true);
             ui.render.update();
         }
         return util.preventDefault(event);
     }
-    if (event.keyCode == 27)
-    {
+    if (event.keyCode == 27) {
         this.hide();
         return util.preventDefault(event);
     }
 };
+
+ui.onKeyUp_InputLabel = function (event)
+{
+    util.stopEventPropagation(event);
+    if (event.keyCode == 27) {
+        this.hide();
+        return util.preventDefault(event);
+    }
+}
 
 //
 // Open file section
@@ -1051,27 +1038,35 @@ ui.getFile = function ()
     return Base64.decode(frame_body.title);
 };
 
-ui.loadMolecule = function (mol_string, force_layout, check_empty_line, paste)
+ui.loadMolecule = function (mol_string, force_layout, check_empty_line, paste, discardRxnArrow, selective_layout)
 {
     var smiles = mol_string.strip();
-    var updateFunc = paste ? function (struct) {
-        struct.rescale();
-        ui.copy(struct);
-        ui.updateSelection();
-        ui.selectMode('paste');
-    } : ui.updateMolecule;
+    var updateFunc = function(struct) {
+        if (discardRxnArrow)
+            struct.rxnArrows.clear();
+        if (paste) {
+            (function(struct) {
+                struct.rescale();
+                if (!ui.copy(struct)) {
+                    alert("Not a valid structure to paste");
+                    return;
+                }
+                ui.editor.deselectAll();
+                ui.selectMode('paste');
+            }).call(this, struct);
+        } else {
+            ui.updateMolecule.call(this, struct);
+        }
+    }
 
-    if (smiles.indexOf('\n') == -1)
-    {
-        if (ui.standalone)
-        {
-            if (smiles != '')
-            {
+    if (smiles.indexOf('\n') == -1) {
+        if (ui.standalone) {
+            if (smiles != '') {
                 alert('SMILES is not supported in a standalone mode.');
             }
             return;
         }
-        new Ajax.Request(ui.path + 'layout?smiles=' + encodeURIComponent(smiles),
+        new Ajax.Request(ui.api_path + 'layout?smiles=' + encodeURIComponent(smiles),
         {
             method: 'get',
             asynchronous : true,
@@ -1085,9 +1080,8 @@ ui.loadMolecule = function (mol_string, force_layout, check_empty_line, paste)
                     throw new Error('Something went wrong' + res.responseText);
             }
         });
-    } else if (!ui.standalone && force_layout)
-    {
-        new Ajax.Request(ui.path + 'layout',
+    } else if (!ui.standalone && force_layout) {
+        new Ajax.Request(ui.api_path + 'layout' + (selective_layout ? '?selective' : ''),
         {
             method: 'post',
             asynchronous : true,
@@ -1107,11 +1101,14 @@ ui.loadMolecule = function (mol_string, force_layout, check_empty_line, paste)
     }
 };
 
-ui.dearomatizeMolecule = function (mol_string, aromatize)
+ui.dearomatizeMolecule = function (mol, aromatize)
 {
-    if (!ui.standalone)
-    {
-        new Ajax.Request(ui.path + (aromatize ? 'aromatize' : 'dearomatize'),
+    mol = mol.clone();
+    var implicitReaction = mol.addRxnArrowIfNecessary();
+    var mol_string = new chem.MolfileSaver().saveMolecule(mol);
+
+    if (!ui.standalone) {
+        new Ajax.Request(ui.api_path + (aromatize ? 'aromatize' : 'dearomatize'),
         {
             method: 'post',
             asynchronous : true,
@@ -1119,7 +1116,10 @@ ui.dearomatizeMolecule = function (mol_string, aromatize)
             onComplete: function (res)
             {
                 if (res.responseText.startsWith('Ok.')) {
-                    ui.updateMolecule(ui.parseCTFile(res.responseText));
+                    var resmol = ui.parseCTFile(res.responseText);
+                    if (implicitReaction)
+                        resmol.rxnArrows.clear();
+                    ui.updateMolecule(resmol);
                 } else if (res.responseText.startsWith('Error.')) {
                     alert(res.responseText.split('\n')[1]);
                 } else {
@@ -1142,6 +1142,10 @@ ui.loadMoleculeFromFile = function ()
 
 ui.loadMoleculeFromInput = function ()
 {
+    if (!util.strip($('input_mol').value)) {
+        alert("The inpus field is empty. Please enter a structure in SMILES or MOLFile/RXNFile format.");
+        return;
+    }
     ui.hideDialog('open_file');
     ui.loadMolecule($('input_mol').value, false, true, $('checkbox_open_copy').checked);
 };
@@ -1164,15 +1168,13 @@ ui.onSelect_OpenFromFile = function ()
 ui.onChange_Input = function ()
 {
     var el = this;
-
-    setTimeout(function ()
-    {
-        if (el.value.strip().indexOf('\n') != -1)
-        {
+    setTimeout(function() {
+        if (el.value.strip().startsWith('InChI=') && ui.standalone) {
+            alert('InChI are not supported in the standalone mode');
+        } else if (el.value.strip().indexOf('\n') != -1) {
             if (el.style.wordWrap != 'normal')
                 el.style.wordWrap = 'normal';
-        } else
-        {
+        } else {
             if (el.style.wordWrap != 'break-word')
                 el.style.wordWrap = 'break-word';
         }
@@ -1186,41 +1188,38 @@ ui.onClick_SaveFile = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
+    $('file_format').value = 'mol';
+    $('file_format_inchi').disabled = ui.standalone;
     ui.showDialog('save_file');
-    ui.onChange_FileFormat(null, true);
+    ui.onChange_FileFormat(null);
 };
 
-ui.onChange_FileFormat = function (event, update)
+ui.onChange_FileFormat = function (event)
 {
+    var format = $('file_format').value;
     var output = $('output_mol');
-    var el = $('file_format');
-
-    if (update)
-    {
-        var saver = new chem.MolfileSaver();
-        output.molfile = saver.saveMolecule(ui.ctab, true);
-
-        try
-        {
-            saver = new chem.SmilesSaver();
-            output.smiles = saver.saveMolecule(ui.ctab, true);
-        } catch (er)
-        {
-            output.smiles = er.message;
+    try {
+        if (format == 'mol') {
+            output.value = new chem.MolfileSaver().saveMolecule(ui.ctab);
+            output.style.wordWrap = 'normal';
+        } else if (format == 'smi') {
+            output.value = new chem.SmilesSaver().saveMolecule(ui.ctab);
+            output.style.wordWrap = 'break-word';
+        } else if (format == 'inchi') {
+            output.value = new chem.InChiSaver().saveMolecule(ui.ctab);
+            output.style.wordWrap = 'break-word';
+        } else {
+            //noinspection ExceptionCaughtLocallyJS
+            throw { message : 'Unsupported data format' };
         }
+    } catch (er) {
+        if (ui.forwardExceptions)
+            throw er;
+        output.value = '';
+        ui.hideDialog('save_file');
+        alert('ERROR: ' + er.message);
     }
-
-    if (el.value == 'mol')
-    {
-        output.value = output.molfile;
-        output.style.wordWrap = 'normal';
-    } else // if (el.value == 'smi')
-    {
-        output.value = output.smiles;
-        output.style.wordWrap = 'break-word';
-    }
-
-    $('mol_data').value = el.value + '\n' + output.value;
+    $('mol_data').value = format + '\n' + output.value;
     output.activate();
 };
 
@@ -1231,33 +1230,35 @@ ui.onClick_ZoomIn = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
-
-    ui.zoomIdx++;
-
-    if (ui.zoomIdx >= ui.zoomValues.length - 1)
-        this.addClassName('buttonDisabled');
-    $('zoom_out').removeClassName('buttonDisabled');
-    if (ui.zoomIdx < 0 || ui.zoomIdx >= ui.zoomValues.length)
-        throw new Error ("Zoom index out of range");
-    ui.setZoomCentered(ui.zoomValues[ui.zoomIdx], ui.render.view2obj(ui.render.viewSz.scaled(0.5)));
-    ui.render.update();
+    ui.zoomSet(ui.zoomIdx + 1);
 };
 
 ui.onClick_ZoomOut = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
+    ui.zoomSet(ui.zoomIdx - 1);
+};
 
-    ui.zoomIdx--;
-
-    if (ui.zoomIdx <= 0)
-        this.addClassName('buttonDisabled');
-    $('zoom_in').removeClassName('buttonDisabled');
-    if (ui.zoomIdx < 0 || ui.zoomIdx >= ui.zoomValues.length)
+ui.zoomSet = function (idx)
+{
+    if (idx < 0 || idx >= ui.zoomValues.length)
         throw new Error ("Zoom index out of range");
-    ui.setZoomCentered(ui.zoomValues[ui.zoomIdx], ui.render.view2obj(ui.render.viewSz.scaled(0.5)));
+
+    if (idx >= ui.zoomValues.length - 1)
+        $('zoom_in').addClassName('buttonDisabled');
+    else
+        $('zoom_in').removeClassName('buttonDisabled');
+    if (idx <= 0)
+        $('zoom_out').addClassName('buttonDisabled');
+    else
+        $('zoom_out').removeClassName('buttonDisabled');
+    ui.zoomIdx = idx;
+    ui.setZoomCentered(ui.zoomValues[ui.zoomIdx], ui.render.getStructCenter(ui.editor.getSelection()));
+    zoom_list.selectedIndex = ui.zoomIdx;
     ui.render.update();
 };
+
 
 ui.setZoomRegular = function (zoom) {
     //mr: prevdent unbounded zooming
@@ -1323,16 +1324,45 @@ ui.onClick_CleanUp = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
-
-
-    var ms = new chem.MolfileSaver();
-
-    try
-    {
-        ui.loadMolecule(ms.saveMolecule(ui.ctab), true);
-    } catch (er)
-    {
-        alert("Molfile: " + er.message);
+    var atoms = util.array(ui.editor.getSelection(true).atoms);
+    var selective = atoms.length > 0;
+    if (selective) {
+        var atomSet = util.Set.fromList(atoms);
+        atomSetExtended = util.Set.empty();
+        ui.ctab.loops.each(function(lid, loop) {
+            // if selection contains any of the atoms in this loop, add all the atoms in the loop to selection
+            if (util.find(loop.hbs, function(hbid) {
+                return util.Set.contains(atomSet, ui.ctab.halfBonds.get(hbid).begin);
+            }) >= 0)
+                util.each(loop.hbs, function(hbid) {
+                    util.Set.add(atomSetExtended, ui.ctab.halfBonds.get(hbid).begin);
+                }, this);
+        }, this);
+        util.Set.mergeIn(atomSetExtended, atomSet);
+        atoms = util.Set.list(atomSetExtended);
+    }
+    ui.editor.deselectAll();
+    try {
+        var aidMap = {};
+        var mol = ui.ctab.clone(null, null, false, aidMap);
+        if (selective) {
+            util.each(atoms, function(aid){
+                aid = aidMap[aid];
+                var dsg = new chem.SGroup('DAT');
+                var dsgid = mol.sgroups.add(dsg);
+                dsg.id = dsgid;
+                dsg.pp = new util.Vec2();
+                dsg.data.fieldName = '_ketcher_selective_layout'
+                dsg.data.fieldValue = '1'
+                mol.atomAddToSGroup(dsgid, aid);
+            }, this);
+        }
+        var implicitReaction = mol.addRxnArrowIfNecessary();
+        ui.loadMolecule(new chem.MolfileSaver().saveMolecule(mol), true, false, false, implicitReaction, selective);
+    } catch (er) {
+        if (ui.forwardExceptions)
+            throw er;
+        alert("ERROR: " + er.message); // TODO [RB] ??? global re-factoring needed on error-reporting
     }
 };
 
@@ -1341,13 +1371,11 @@ ui.onClick_Aromatize = function ()
     if (this.hasClassName('buttonDisabled'))
         return;
 
-    var ms = new chem.MolfileSaver();
-
-    try
-    {
-        ui.dearomatizeMolecule(ms.saveMolecule(ui.ctab), true);
-    } catch (er)
-    {
+    try {
+        ui.dearomatizeMolecule(ui.ctab, true);
+    } catch (er) {
+        if (ui.forwardExceptions)
+            throw er;
         alert("Molfile: " + er.message);
     }
 };
@@ -1357,27 +1385,13 @@ ui.onClick_Dearomatize = function ()
     if (this.hasClassName('buttonDisabled'))
         return;
 
-    var ms = new chem.MolfileSaver();
-
-    try
-    {
-        ui.dearomatizeMolecule(ms.saveMolecule(ui.ctab), false);
-    } catch (er)
-    {
+    try {
+        ui.dearomatizeMolecule(ui.ctab, false);
+    } catch (er) {
+        if (ui.forwardExceptions)
+            throw er;
         alert("Molfile: " + er.message);
     }
-};
-
-//
-// Interactive section
-//
-ui.selection =
-{
-    atoms: [],
-    bonds: [],
-    rxnArrows: [],
-    rxnPluses: [],
-    chiralFlags: []
 };
 
 ui.page2canvas2 = function (pos)
@@ -1453,8 +1467,7 @@ ui.atomForNewBond = function (id)
 
     // TODO: impove layout: tree, ...
 
-    for (i = 0; i < neighbours.length; i++)
-    {
+    for (i = 0; i < neighbours.length; i++) {
         angle = util.Vec2.angle(neighbours[i].v, neighbours[(i + 1) % neighbours.length].v);
 
         if (angle < 0)
@@ -1466,23 +1479,19 @@ ui.atomForNewBond = function (id)
 
     var v = new util.Vec2(1, 0);
 
-    if (neighbours.length > 0)
-    {
-        if (neighbours.length == 1)
-        {
+    if (neighbours.length > 0) {
+        if (neighbours.length == 1) {
             max_angle = -(4 * Math.PI / 3);
 
             // zig-zag
             var nei = ui.render.atomGetNeighbors(id)[0];
-            if (ui.render.atomGetDegree(nei.aid) > 1)
-            {
+            if (ui.render.atomGetDegree(nei.aid) > 1) {
                 var nei_neighbours = new Array();
                 var nei_pos = ui.render.atomGetPos(nei.aid);
                 var nei_v = util.Vec2.diff(pos, nei_pos);
                 var nei_angle = Math.atan2(nei_v.y, nei_v.x);
 
-                ui.render.atomGetNeighbors(nei.aid).each(function (nei_nei)
-                {
+                ui.render.atomGetNeighbors(nei.aid).each(function (nei_nei) {
                     var nei_nei_pos = ui.render.atomGetPos(nei_nei.aid);
 
                     if (nei_nei.bid == nei.bid || util.Vec2.dist(nei_pos, nei_nei_pos) < 0.1)
@@ -1496,8 +1505,7 @@ ui.atomForNewBond = function (id)
 
                     nei_neighbours.push(ang);
                 });
-                nei_neighbours.sort(function (nei1, nei2)
-                {
+                nei_neighbours.sort(function (nei1, nei2) {
                     return nei1 - nei2;
                 });
 
@@ -1538,60 +1546,8 @@ ui.onOffsetChanged = function (newOffset, oldOffset)
     ui.client_area.scrollTop += delta.y;
 };
 
-ui.updateSelection = function (selection, nodraw)
-{
-    selection = selection || {};
-    for (var map in rnd.ReStruct.maps) {
-        if (Object.isUndefined(selection[map]))
-            ui.selection[map] = [];
-        else
-            ui.selection[map] = selection[map];
-    }
-
-    ui.selection.bonds = ui.selection.bonds.filter(function (bid)
-    {
-        var bond = ui.ctab.bonds.get(bid);
-        return (ui.selection.atoms.indexOf(bond.begin) != -1 && ui.selection.atoms.indexOf(bond.end) != -1);
-    });
-
-    if (!nodraw) {
-        ui.render.setSelection(ui.selection);
-        ui.render.update();
-    }
-
-    ui.updateClipboardButtons();
-};
-
-ui.selected = function ()
-{
-    for (var map in rnd.ReStruct.maps) {
-        if (!Object.isUndefined(ui.selection[map]) && ui.selection[map].length > 0) {
-            return true;
-        }
-    }
-    return false;
-};
-
-ui.selectedAtom = function ()
-{
-	return !Object.isUndefined(ui.selection.atoms) && ui.selection.atoms.length > 0;
-};
-
 ui.selectAll = function ()
 {
-    // TODO cleanup
-/*
-    var mode = ui.modeType();
-    if (mode == ui.MODE.ERASE || mode == ui.MODE.SGROUP)
-        ui.selectMode(ui.defaultSelector);
-
-    var selection = {};
-    for (var map in rnd.ReStruct.maps) {
-        selection[map] = ui.ctab[map].ikeys();
-    }
-
-    ui.updateSelection(selection);
-*/
     if (!ui.ctab.isBlank()) {
         ui.selectMode($('selector').getAttribute('selid'));
         ui.editor.selectAll();
@@ -1601,10 +1557,8 @@ ui.selectAll = function ()
 ui.removeSelected = function ()
 {
     ui.addUndoAction(ui.Action.fromFragmentDeletion());
-    for (var map in rnd.ReStruct.maps)
-        ui.selection[map] = [];
+    ui.editor.deselectAll();
     ui.render.update();
-    ui.updateClipboardButtons();
 };
 
 ui.hideBlurredControls = function ()
@@ -1615,8 +1569,10 @@ ui.hideBlurredControls = function ()
         'selector_dropdown_list',
         'bond_dropdown_list',
         'template_dropdown_list',
+        'customtemplate_dropdown_list',
         'reaction_dropdown_list',
-        'rgroup_dropdown_list'
+        'rgroup_dropdown_list',
+        'transform_dropdown_list'
     ].each(
         function(el) { el = $(el); if (el.visible()) { el.hide(); ret = true; }}
     );
@@ -1643,14 +1599,16 @@ ui.showAtomAttachmentPoints = function(params)
     $('atom_ap2').checked = ((params.selection || 0) & 2) > 0;
     ui.showDialog('atom_attpoints');
     var _onOk = new Event.Handler('atom_attpoints_ok', 'click', undefined, function() {
+        _onOk.stop();
+        _onCancel.stop();
         ui.hideDialog('atom_attpoints');
         if ('onOk' in params) params['onOk'](($('atom_ap1').checked ? 1 : 0) + ($('atom_ap2').checked ? 2 : 0));
-        _onOk.stop();
     }).start();
     var _onCancel = new Event.Handler('atom_attpoints_cancel', 'click', undefined, function() {
+        _onOk.stop();
+        _onCancel.stop();
         ui.hideDialog('atom_attpoints');
         if ('onCancel' in params) params['onCancel']();
-        _onCancel.stop();
     }).start();
     $('atom_attpoints_ok').focus();
 };
@@ -1663,11 +1621,12 @@ ui.showAtomProperties = function (id)
     $('atom_properties').atom_id = id;
     $('atom_label').value = ui.render.atomGetAttr(id, 'label');
     ui.onChange_AtomLabel.call($('atom_label'));
-    var value = ui.render.atomGetAttr(id, 'charge');
+    var value = ui.render.atomGetAttr(id, 'charge') - 0;
     $('atom_charge').value = (value == 0 ? '' : value);
-    value = ui.render.atomGetAttr(id, 'isotope');
+    value = ui.render.atomGetAttr(id, 'isotope') - 0;
     $('atom_isotope').value = (value == 0 ? '' : value);
-    $('atom_valence').value = (!ui.render.atomGetAttr(id, 'explicitValence') ? '' : ui.render.atomGetAttr(id, 'valence'));
+    value = ui.render.atomGetAttr(id, 'explicitValence') - 0;
+    $('atom_valence').value =  value < 0 ? '' : value;
     $('atom_radical').value = ui.render.atomGetAttr(id, 'radical');
 
     $('atom_inversion').value = ui.render.atomGetAttr(id, 'invRet');
@@ -1687,13 +1646,12 @@ ui.applyAtomProperties = function ()
 
     var id = $('atom_properties').atom_id;
 
-    ui.addUndoAction(ui.Action.fromAtomAttrs(id,
+    ui.addUndoAction(ui.Action.fromAtomsAttrs(id,
     {
         label: $('atom_label').value,
         charge: $('atom_charge').value == '' ? 0 : parseInt($('atom_charge').value),
         isotope: $('atom_isotope').value == '' ? 0 : parseInt($('atom_isotope').value),
-        explicitValence: $('atom_valence').value != '',
-        valence: $('atom_valence').value == '' ? ui.render.atomGetAttr(id, 'valence') : parseInt($('atom_valence').value),
+        explicitValence: $('atom_valence').value == '' ? -1 : parseInt($('atom_valence').value),
         radical: parseInt($('atom_radical').value),
         // reaction flags
         invRet: parseInt($('atom_inversion').value),
@@ -1714,8 +1672,7 @@ ui.onChange_AtomLabel = function ()
 
     var element = chem.Element.getElementByLabel(this.value);
 
-    if (element == null && this.value != 'A' && this.value != '*' && this.value != 'Q' && this.value != 'X' && this.value != 'R')
-    {
+    if (element == null && this.value != 'A' && this.value != '*' && this.value != 'Q' && this.value != 'X' && this.value != 'R') {
         this.value = ui.render.atomGetAttr($('atom_properties').atom_id, 'label');
 
         if (this.value != 'A' && this.value != '*')
@@ -1734,6 +1691,8 @@ ui.onChange_AtomCharge = function ()
 {
     if (this.value.strip() == '' || this.value == '0')
         this.value = '';
+    else if (this.value.match(/^[1-9][0-9]{0,1}[-+]$/))
+        this.value = (this.value.endsWith('-') ? '-' : '') + this.value.substr(0, this.value.length - 1);
     else if (!this.value.match(/^[+-]?[1-9][0-9]{0,1}$/))
         this.value = ui.render.atomGetAttr($('atom_properties').atom_id, 'charge');
 };
@@ -1766,8 +1725,7 @@ ui.showBondProperties = function (id)
     var type = ui.render.bondGetAttr(id, 'type');
     var stereo = ui.render.bondGetAttr(id, 'stereo');
 
-    for (var bond in ui.bondTypeMap)
-    {
+    for (var bond in ui.bondTypeMap) {
         if (ui.bondTypeMap[bond].type == type && ui.bondTypeMap[bond].stereo == stereo)
             break;
     }
@@ -1865,14 +1823,24 @@ ui.showSGroupProperties = function (id, tool, selection, onOk, onCancel)
         switch (type)
         {
         case 'SRU':
-            attrs.connectivity = $('sgroup_connection').value;
-            attrs.subscript = $('sgroup_label').value;
+            attrs.connectivity = $('sgroup_connection').value.strip();
+            attrs.subscript = $('sgroup_label').value.strip();
+            if (attrs.subscript.length != 1 || !attrs.subscript.match(/^[a-zA-Z]$/)) {
+                alert(attrs.subscript.length ? "SRU subscript should consist of a single letter." : "Please provide an SRU subscript.");
+                ui.showDialog('sgroup_properties');
+                return;
+            }
             break;
         case 'MUL':
             attrs.mul = parseInt($('sgroup_label').value);
             break;
         case 'SUP':
-            attrs.name = $('sgroup_label').value;
+            attrs.name = $('sgroup_label').value.strip();
+            if (!attrs.name) {
+                alert("Please provide a name for the superatom.");
+                ui.showDialog('sgroup_properties');
+                return;
+            }
             break;
         case 'DAT':
             attrs.fieldName = $('sgroup_field_name').value.strip();
@@ -1880,8 +1848,7 @@ ui.showSGroupProperties = function (id, tool, selection, onOk, onCancel)
             attrs.absolute = $('sgroup_pos_absolute').checked;
             attrs.attached = $('sgroup_pos_attached').checked;
 
-            if (attrs.fieldName == '' || attrs.fieldValue == '')
-            {
+            if (attrs.fieldName == '' || attrs.fieldValue == '') {
                 alert("Please, specify data field name and value.");
                 ui.showDialog('sgroup_properties');
                 return;
@@ -1916,12 +1883,9 @@ ui.onChange_SGroupType = function ()
 {
     var type = $('sgroup_type').value;
 
-    if (type == 'DAT')
-    {
+    if (type == 'DAT') {
         $$('.generalSGroup').each(function (el) {el.hide()});
         $$('.dataSGroup').each(function (el) {el.show()});
-
-        $('sgroup_field_name').activate();
 
         return;
     }
@@ -1938,9 +1902,6 @@ ui.onChange_SGroupType = function ()
         $('sgroup_label').value = 'n';
     else if (type == 'GEN' || type == 'SUP')
         $('sgroup_label').value = '';
-
-    if (type != 'GEN')
-        $('sgroup_label').activate();
 };
 
 //
@@ -1975,28 +1936,49 @@ ui.onClick_ElemTableButton = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
-    ui.showElemTable();
+    ui.showElemTable({
+        onOk: function() {
+            ui.onClick_SideButton.apply($('atom_table'));
+            return true;
+        },
+        onCancel: function() {
+            ui.elem_table_obj.restore();
+        }
+    });
 };
 
-ui.showElemTable = function ()
-{
-    if ($('elem_table').visible())
-        return;
 
-    ui.showDialog('elem_table');
-    if (typeof(ui.elem_table_obj) == 'undefined') {
-        ui.elem_table_obj = new rnd.ElementTable('elem_table_area', {
-            'fillColor':'#DADADA',
-            'fillColorSelected':'#FFFFFF',
-            'frameColor':'#E8E8E8',
-            'fontSize':23,
-            'buttonHalfSize':18
-        }, true);
-        ui.elem_table_area = ui.elem_table_obj.renderTable();
-        $('elem_table_single').checked = true;
+ui.showElemTable = function(params)
+{
+    if (!$('elem_table').visible()) {
+        params = params || {};
+        ui.showDialog('elem_table');
+        if (typeof(ui.elem_table_obj) == 'undefined') {
+            ui.elem_table_obj = new rnd.ElementTable('elem_table_area', {
+                'fillColor':'#DADADA',
+                'fillColorSelected':'#FFFFFF',
+                'frameColor':'#E8E8E8',
+                'fontSize':23,
+                'buttonHalfSize':18
+            }, true);
+            ui.elem_table_area = ui.elem_table_obj.renderTable();
+            $('elem_table_single').checked = true;
+        }
+        ui.elem_table_obj.store();
+        ui.elem_table_obj.setSelection(params.selection);
+        var _onOk = new Event.Handler('elem_table_ok', 'click', undefined, function() {
+            if (!params || !('onOk' in params) || params['onOk'](ui.elem_table_obj.getAtomProps())) {
+                _onOk.stop(); _onCancel.stop();
+                ui.hideDialog('elem_table');
+            }
+        }).start();
+        var _onCancel = new Event.Handler('elem_table_cancel', 'click', undefined, function() {
+            _onOk.stop(); _onCancel.stop();
+            ui.hideDialog('elem_table');
+            if (params && 'onCancel' in params) params['onCancel']();
+        }).start();
+        $('elem_table_ok').focus();
     }
-    ui.elem_table_obj.store();
-    $('elem_table_ok').focus();
 };
 
 
@@ -2037,23 +2019,27 @@ ui.showRLogicTable = function(params)
     params = params || {};
     params.rlogic = params.rlogic || {};
     $('rlogic_occurrence').value = params.rlogic.occurrence || '>0';
-    $('rlogic_resth').value = params.rlogic.resth || '0';
-    $('rlogic_if').innerHTML = '<option value="0">Always</option>';
+    $('rlogic_resth').value = params.rlogic.resth ? '1' : '0';
+    var ifOptHtml = '<option value="0">Always</option>';
     for (var r = 1; r <= 32; r++) if (r != params.rgid && 0 != (params.rgmask & (1 << (r - 1)))) {
-        $('rlogic_if').innerHTML += '<option value="' + r + '">IF R' + params.rgid + ' THEN R' + r + '</option>';
+        ifOptHtml += '<option value="' + r + '">IF R' + params.rgid + ' THEN R' + r + '</option>';
     }
+    $('rlogic_if').outerHTML = '<select id="rlogic_if">' + ifOptHtml + '</select>'; // [RB] thats tricky because IE8 fails to set innerHTML
     $('rlogic_if').value = params.rlogic.ifthen;
     ui.showDialog('rlogic_table');
 
     var _onOk = new Event.Handler('rlogic_ok', 'click', undefined, function() {
-        _onOk.stop();
-        _onCancel.stop();
-        ui.hideDialog('rlogic_table');
-        if (params && 'onOk' in params) params['onOk']({
-            'occurrence' : $('rlogic_occurrence').value,
+        var result = {
+            'occurrence' : $('rlogic_occurrence').value
+                .replace(/\s*/g, '').replace(/,+/g, ',').replace(/^,/, '').replace(/,$/, ''),
             'resth' : $('rlogic_resth').value == '1',
             'ifthen' : parseInt($('rlogic_if').value)
-        });
+        };
+        if (!params || !('onOk' in params) || params['onOk'](result)) {
+            _onOk.stop();
+            _onCancel.stop();
+            ui.hideDialog('rlogic_table');
+        }
     }).start();
     var _onCancel = new Event.Handler('rlogic_cancel', 'click', undefined, function() {
         _onOk.stop();
@@ -2070,6 +2056,8 @@ ui.onSelect_ElemTableNotList = function ()
     try {
         ui.elem_table_obj.updateAtomProps();
     } catch(e) {
+        if (ui.forwardExceptions)
+            throw e;
         ErrorHandler.handleError(e);
     }
 };
@@ -2092,12 +2080,10 @@ ui.updateClipboardButtons = function ()
     else
         $('paste').removeClassName('buttonDisabled');
 
-    if (ui.selected())
-    {
+    if (ui.editor.hasSelection(true)) {
         $('copy').removeClassName('buttonDisabled');
         $('cut').removeClassName('buttonDisabled');
-    } else
-    {
+    } else {
         $('copy').addClassName('buttonDisabled');
         $('cut').addClassName('buttonDisabled');
     }
@@ -2107,8 +2093,15 @@ ui.copy = function (struct, selection)
 {
     if (!struct) {
         struct = ui.ctab;
-        selection = ui.selection;
+        selection = ui.editor.getSelection(true);
     }
+
+    // these will be copied automatically along with the
+    //  corresponding s-groups
+    if (selection && selection.sgroupData) {
+        selection.sgroupData.clear();
+    }
+
     ui.clipboard =
     {
         atoms: new Array(),
@@ -2123,22 +2116,30 @@ ui.copy = function (struct, selection)
         // TODO: "clipboard" support to be moved to editor module
         getAnchorPosition: function() {
             if (this.atoms.length) {
-                return this.atoms[0].pp; // TODO: check
+                var xmin = 1e50, ymin = xmin, xmax = -xmin, ymax = -ymin;
+                for (var i = 0; i < this.atoms.length; i++) {
+                    xmin = Math.min(xmin, this.atoms[i].pp.x); ymin = Math.min(ymin, this.atoms[i].pp.y);
+                    xmax = Math.max(xmax, this.atoms[i].pp.x); ymax = Math.max(ymax, this.atoms[i].pp.y);
+                }
+                return new util.Vec2((xmin + xmax) / 2, (ymin + ymax) / 2); // TODO: check
             } else if (this.rxnArrows.length) {
                 return this.rxnArrows[0].pp;
             } else if (this.rxnPluses.length) {
                 return this.rxnPluses[0].pp;
             } else if (this.chiralFlags.length) {
                 return this.chiralFlags[0].pp;
+            } else {
+                return null;
             }
         }
     };
 
     ui.structToClipboard(ui.clipboard, struct, selection);
+    return !!ui.clipboard.getAnchorPosition();
 };
 
 ui.structToClipboard = function (clipboard, struct, selection)
-    {
+{
     selection = selection || {
         atoms: struct.atoms.keys(),
         bonds: struct.bonds.keys(),
@@ -2163,47 +2164,23 @@ ui.structToClipboard = function (clipboard, struct, selection)
         clipboard.bonds.push(new chem.Struct.Bond(new_bond));
     });
 
-    var sgroup_counts = new Hash();
+    var sgroup_list = struct.getSGroupsInAtomSet(selection.atoms);
 
-    // determine selected sgroups
-    selection.atoms.each(function (id)
-    {
-        var sg = util.Set.list(struct.atoms.get(id).sgs);
-
-        sg.each(function (sid)
-        {
-            var n = sgroup_counts.get(sid);
-            if (Object.isUndefined(n))
-                n = 1;
-            else
-                n++;
-            sgroup_counts.set(sid, n);
-        }, this);
-    }, this);
-
-    sgroup_counts.each(function (sg)
-    {
-        var sid = parseInt(sg.key);
-
+    util.each(sgroup_list, function (sid){
         var sgroup = struct.sgroups.get(sid);
         var sgAtoms = chem.SGroup.getAtoms(struct, sgroup);
-        if (sg.value == sgAtoms.length)
-        {
-            var sgroup_info =
-            {
-                type: sgroup.type,
-                attrs: sgroup.getAttrs(),
-                atoms: util.array(sgAtoms)
-            };
+        var sgroup_info = {
+            type: sgroup.type,
+            attrs: sgroup.getAttrs(),
+            atoms: util.array(sgAtoms),
+            pp: sgroup.pp
+        };
 
-            for (var i = 0; i < sgroup_info.atoms.length; i++)
-            {
-                sgroup_info.atoms[i] = mapping[sgroup_info.atoms[i]];
-            }
+        for (var i = 0; i < sgroup_info.atoms.length; i++)
+            sgroup_info.atoms[i] = mapping[sgroup_info.atoms[i]];
 
-            clipboard.sgroups.push(sgroup_info);
-        }
-    });
+        clipboard.sgroups.push(sgroup_info);
+    }, this);
 
     selection.rxnArrows.each(function (id)
     {
@@ -2250,7 +2227,8 @@ ui.onClick_Cut = function ()
     if (this.hasClassName('buttonDisabled'))
         return;
 
-    ui.copy();
+    if (!ui.copy())
+        return;
     ui.removeSelected();
 };
 
@@ -2259,15 +2237,15 @@ ui.onClick_Copy = function ()
     if (this.hasClassName('buttonDisabled'))
         return;
 
-    ui.copy();
-    ui.updateSelection();
+    if (!ui.copy())
+        return;
+    ui.editor.deselectAll();
 };
 
 ui.onClick_Paste = function ()
 {
     if (this.hasClassName('buttonDisabled'))
         return;
-
     ui.selectMode('paste');
 };
 

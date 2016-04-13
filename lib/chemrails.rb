@@ -1,3 +1,5 @@
+require_relative 'chemrails/svg_processor'
+
 module ChemRails
   class Engine < Rails::Engine
 
@@ -29,7 +31,7 @@ module ChemRails
 
         k,v = x.split(":")
         if v then
-          the_hash[k.to_sym] = v 
+          the_hash[k.to_sym] = v
         end
       end
 
@@ -40,6 +42,3 @@ module ChemRails
   end
 
 end
-
-
-

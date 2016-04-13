@@ -7,7 +7,7 @@
  * the packaging of this file.
  *
  * This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
- * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOS  E.
+ * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  ***************************************************************************/
 
 // rnd.ReStruct constructor and utilities are defined here
@@ -19,6 +19,19 @@ if (!window.chem || !util.Vec2 || !chem.Struct || !window.rnd || !rnd.Visel)
 
 if (!window.rnd)
 	rnd = {};
+
+Raphael.el.translateAbs = function(x,y) {
+    this.delta = this.delta || new util.Vec2();
+    this.delta.x += x-0;
+    this.delta.y += y-0;
+    this.transform('t' + this.delta.x.toString() + ',' + this.delta.y.toString());
+};
+
+Raphael.st.translateAbs = function (x,y) {
+    this.forEach(function (el) {
+        el.translateAbs(x,y);
+    });
+};
 
 rnd.ReObject = function()  // TODO ??? should it be in ReStruct namespace
 {
@@ -35,11 +48,14 @@ rnd.ReObject.prototype.init = function(viselType)
     this.selectionPlate = null;
 };
 
-rnd.ReObject.prototype.calcVBox = function(render) {
-    if (this.visel.boundingBox) {
-        return this.visel.boundingBox
-            .transform(render.scaled2obj, render);
-    }
+// returns the bounding box of a ReObject in the object coordinates
+rnd.ReObject.prototype.getVBoxObj = function(render) {
+    var vbox = this.visel.boundingBox;
+    if (util.isNull(vbox))
+        return null;
+    if (render.offset)
+        vbox = vbox.translate(render.offset.negated());
+    return vbox.transform(render.scaled2obj, render);
 };
 
 rnd.ReObject.prototype.drawHighlight = function(render) {
@@ -48,7 +64,14 @@ rnd.ReObject.prototype.drawHighlight = function(render) {
 
 rnd.ReObject.prototype.setHighlight = function(highLight, render) { // TODO render should be field
     if (highLight) {
-        var noredraw = this.highlighting && !this.highlighting.removed;
+        var noredraw = 'highlighting' in this && this.highlighting != null;// && !this.highlighting.removed;
+        if (noredraw) {
+            if (this.highlighting.type == 'set') {
+                noredraw = !this.highlighting[0].removed;
+            } else {
+                noredraw = !this.highlighting.removed;
+            }
+        }
         // rbalabanov: here is temporary fix for "drag issue" on iPad
         //BEGIN
         noredraw = noredraw && (!('hiddenPaths' in rnd.ReStruct.prototype) || rnd.ReStruct.prototype.hiddenPaths.indexOf(this.highlighting) < 0);
@@ -56,7 +79,11 @@ rnd.ReObject.prototype.setHighlight = function(highLight, render) { // TODO rend
         if (noredraw) {
             this.highlighting.show();
         }
-        else this.highlighting = this.drawHighlight(render);
+        else {
+            render.paper.setStart();
+            this.drawHighlight(render);
+            this.highlighting = render.paper.setFinish();
+        }
     } else {
         if (this.highlighting) this.highlighting.hide();
     }
@@ -76,20 +103,29 @@ rnd.ReAtom = function (/*chem.Atom*/atom)
 
 	this.hydrogenOnTheLeft = false;
 
-	this.sGroupHighlight = false;
-	this.sGroupHighlighting = null;
-
 	this.component = -1;
 };
 rnd.ReAtom.prototype = new rnd.ReObject();
+rnd.ReAtom.isSelectable = function() { return true; }
+
+rnd.ReAtom.prototype.getVBoxObj = function(render) {
+    if (this.visel.boundingBox)
+        return rnd.ReObject.prototype.getVBoxObj.call(this, render);
+    return new util.Box2Abs(this.a.pp, this.a.pp);
+};
 
 rnd.ReAtom.prototype.drawHighlight = function(render) {
-    var ps = render.ps(this.a.pp);
-    var ret = render.paper.circle(
-        ps.x, ps.y, render.styles.atomSelectionPlateRadius
-    ).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+    var ret = this.makeHighlightPlate(render);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
+};
+
+rnd.ReAtom.prototype.makeHighlightPlate = function(render) {
+    var paper = render.paper;
+    var styles = render.styles;
+    var ps = render.ps(this.a.pp);
+    return paper.circle(ps.x, ps.y, styles.atomSelectionPlateRadius)
+            .attr(styles.highlightStyle);
 };
 
 rnd.ReAtom.prototype.makeSelectionPlate = function (restruct, paper, styles) {
@@ -106,22 +142,25 @@ rnd.ReBond = function (/*chem.Bond*/bond)
 	this.doubleBondShift = 0;
 };
 rnd.ReBond.prototype = new rnd.ReObject();
+rnd.ReBond.isSelectable = function() { return true; }
 
-rnd.ReBond.prototype.drawHighlight = function(render)
-{
-    render.ctab.bondRecalc(render.settings, this);
-    var ret = render.paper.ellipse(
-        this.b.center.x, this.b.center.y, this.b.sa, this.b.sb
-    ).rotate(this.b.angle).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+rnd.ReBond.prototype.drawHighlight = function(render) {
+    var ret = this.makeHighlightPlate(render);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
+};
+
+rnd.ReBond.prototype.makeHighlightPlate = function(render) {
+    render.ctab.bondRecalc(render.settings, this);
+    var c = render.ps(this.b.center);
+    return render.paper.circle(c.x, c.y, 0.8 * render.styles.atomSelectionPlateRadius)
+            .attr(render.styles.highlightStyle);
 };
 
 rnd.ReBond.prototype.makeSelectionPlate = function (restruct, paper, styles) {
 	restruct.bondRecalc(restruct.render.settings, this);
-	return paper
-	.ellipse(this.b.center.x, this.b.center.y, this.b.sa, this.b.sb)
-	.rotate(this.b.angle)
+        var c = restruct.render.ps(this.b.center);
+	return paper.circle(c.x, c.y, 0.8 * styles.atomSelectionPlateRadius)
 	.attr(styles.selectionStyle);
 };
 
@@ -185,27 +224,13 @@ rnd.ReStruct = function (molecule, render, norescale)
             this.sgroupData.set(id, new rnd.ReDataSGroupData(item)); // [MK] sort of a hack, we use the SGroup id for the data field id
         }
     }, this);
-    
+
     if (molecule.isChiral) {
         var bb = molecule.getCoordBoundingBox();
         this.chiralFlags.set(0,new rnd.ReChiralFlag(new util.Vec2(bb.max.x, bb.min.y - 1)));
     }
-        
 
-	this.coordProcess(norescale);
-
-	this.tmpVisels = [];
-};
-
-rnd.ReStruct.maps = {
-    'atoms':       0,
-    'bonds':       1,
-    'rxnPluses':   2,
-    'rxnArrows':   3,
-    'frags':       4,
-    'rgroups':     5,
-    'sgroupData':  6,
-    'chiralFlags': 7
+    this.coordProcess(norescale);
 };
 
 rnd.ReStruct.prototype.connectedComponentRemoveAtom = function (aid, atom) {
@@ -335,8 +360,9 @@ rnd.ReStruct.prototype.insertInLayer = function (lid, path) {
 };
 
 rnd.ReStruct.prototype.clearMarks = function () {
-	this.bondsChanged = {};
-	this.atomsChanged = {};
+	for (var map in rnd.ReStruct.maps) {
+        this[map+'Changed'] = {};
+	}
 	this.structChanged = false;
 };
 
@@ -361,25 +387,48 @@ rnd.ReStruct.prototype.markItem = function (map, id, mark) {
 };
 
 rnd.ReStruct.prototype.eachVisel = function (func, context) {
-
-	for (var map in rnd.ReStruct.maps) {
-		this[map].each(function(id, item){
-			func.call(context, item.visel);
-		}, this);
-	}
-	this.sgroups.each(function(sid, sgroup){
-		func.call(context, sgroup.visel);
-	}, this);
-	this.reloops.each(function(rlid, reloop) {
-		func.call(context, reloop.visel);
-	}, this);
-	for (var i = 0; i < this.tmpVisels.length; ++i)
-		func.call(context, this.tmpVisels[i]);
+    for (var map in rnd.ReStruct.maps) {
+        this[map].each(function(id, item) {
+            func.call(context, item.visel);
+        }, this);
+    }
 };
+
+rnd.ReStruct.prototype.getVBoxObj = function (selection)
+{
+    selection = selection || {};
+    if (this.selectionIsEmpty(selection)) {
+        for (var map in rnd.ReStruct.maps) {
+            selection[map] = this[map].keys();
+        }
+    }
+    var vbox = null;
+    for (var map in rnd.ReStruct.maps) {
+        if (selection[map]) {
+            util.each(selection[map], function(id) {
+                var box = this[map].get(id).getVBoxObj(this.render);
+                if (box)
+                    vbox = vbox ? util.Box2Abs.union(vbox, box) : box.clone();
+            }, this);
+        }
+    }
+	vbox = vbox || new util.Box2Abs(0, 0, 0, 0);
+	return vbox;
+};
+
+rnd.ReStruct.prototype.selectionIsEmpty = function (selection) {
+    util.assert(!util.isUndefined(selection), "'selection' is not defined");
+    if (util.isNull(selection))
+        return true;
+	for (var map in rnd.ReStruct.maps)
+		if (selection[map] && selection[map].length > 0)
+            return false;
+    return true;
+}
 
 rnd.ReStruct.prototype.translate = function (d) {
 	this.eachVisel(function(visel){
-		this.translateVisel(visel, d);
+            visel.translate(d);
 	}, this);
 };
 
@@ -388,16 +437,6 @@ rnd.ReStruct.prototype.scale = function (s) {
 	this.eachVisel(function(visel){
 		this.scaleVisel(visel, s);
 	}, this);
-};
-
-rnd.ReStruct.prototype.translateVisel = function (visel, d) {
-	var i;
-	for (i = 0; i < visel.paths.length; ++i)
-		visel.paths[i].translate(d.x, d.y);
-	for (i = 0; i < visel.boxes.length; ++i)
-		visel.boxes[i].translate(d);
-	if (visel.boundingBox != null)
-		visel.boundingBox.translate(d);
 };
 
 rnd.ReStruct.prototype.scaleRPath = function (path, s) {
@@ -424,6 +463,46 @@ rnd.ReStruct.prototype.clearVisels = function () {
 	this.eachVisel(function(visel){
 		this.clearVisel(visel);
 	}, this);
+};
+
+rnd.ReStruct.prototype.findIncomingStereoUpBond = function(atom, bid0, includeBoldStereoBond) {
+    return util.find(atom.neighbors, function(hbid) {
+	var hb = this.molecule.halfBonds.get(hbid);
+	var bid = hb.bid;
+	if (bid === bid0)
+	    return false;
+	var neibond = this.bonds.get(bid);
+	if (neibond.b.type === chem.Struct.BOND.TYPE.SINGLE && neibond.b.stereo === chem.Struct.BOND.STEREO.UP)
+	    return neibond.b.end === hb.begin || (neibond.boldStereo && includeBoldStereoBond);
+	if (neibond.b.type === chem.Struct.BOND.TYPE.DOUBLE && neibond.b.stereo === chem.Struct.BOND.STEREO.NONE && includeBoldStereoBond && neibond.boldStereo)
+	    return true;
+	return false;
+    }, this);
+}
+
+rnd.ReStruct.prototype.checkStereoBold = function(bid0, bond) {
+    var halfbonds = util.map([bond.b.begin, bond.b.end], function(aid) {
+	var atom = this.molecule.atoms.get(aid);
+	var pos =  this.findIncomingStereoUpBond(atom, bid0, false);
+	return pos < 0 ? -1 : atom.neighbors[pos];
+    }, this);
+    util.assert(halfbonds.length === 2);
+    bond.boldStereo = halfbonds[0] >= 0 && halfbonds[1] >= 0;
+};
+
+rnd.ReStruct.prototype.findIncomingUpBonds = function(bid0, bond) {
+    var halfbonds = util.map([bond.b.begin, bond.b.end], function(aid) {
+	var atom = this.molecule.atoms.get(aid);
+	var pos =  this.findIncomingStereoUpBond(atom, bid0, true);
+	return pos < 0 ? -1 : atom.neighbors[pos];
+    }, this);
+    util.assert(halfbonds.length === 2);
+    bond.neihbid1 = this.atoms.get(bond.b.begin).showLabel ? -1 : halfbonds[0];
+    bond.neihbid2 = this.atoms.get(bond.b.end).showLabel ? -1 : halfbonds[1];
+};
+
+rnd.ReStruct.prototype.checkStereoBoldBonds = function() {
+    this.bonds.each(this.checkStereoBold, this);
 };
 
 rnd.ReStruct.prototype.update = function (force)
@@ -483,9 +562,6 @@ rnd.ReStruct.prototype.update = function (force)
             sgroup.highlighting = null;
             sgroup.selectionPlate = null;
 	}, this);
-	for (var i = 0; i < this.tmpVisels.length; ++i)
-		this.clearVisel(this.tmpVisels[i]);
-	this.tmpVisels.clear();
 
     // TODO [RB] need to implement update-on-demand for fragments and r-groups
     this.frags.each(function(frid, frag) {
@@ -502,27 +578,24 @@ rnd.ReStruct.prototype.update = function (force)
 	}
 
 	// only update half-bonds adjacent to atoms that have moved
-	this.updateHalfBonds();
-	this.sortNeighbors();
+    this.molecule.updateHalfBonds(new util.Map(this.atomsChanged).findAll(function(aid, status){ return status >= 0; }, this));
+    this.molecule.sortNeighbors(new util.Map(this.atomsChanged).findAll(function(aid, status){ return status >= 1; }, this));
 	this.assignConnectedComponents();
-//	this.printConnectedComponents();
 	this.setImplicitHydrogen();
 	this.setHydrogenPos();
 	this.initialized = true;
 
-	this.scaleCoordinates();
+	this.verifyLoops();
 	var updLoops = force || this.structChanged;
 	if (updLoops)
 		this.updateLoops();
 	this.setDoubleBondShift();
 	this.checkLabelsToShow();
+	this.checkStereoBoldBonds();
 	this.showLabels();
-	this.shiftBonds();
 	this.showBonds();
-	this.verifyLoops();
 	if (updLoops)
 		this.renderLoops();
-	this.clearMarks();
 	this.drawReactionSymbols();
 	this.drawSGroups();
     this.drawFragments();
@@ -531,6 +604,7 @@ rnd.ReStruct.prototype.update = function (force)
             if (this.chiralFlagsChanged[id] > 0)
                 item.draw(this.render);
         }, this);
+	this.clearMarks();
 	return true;
 };
 
@@ -555,7 +629,7 @@ rnd.ReStruct.prototype.drawReactionArrow = function (id, item)
 	item.visel.add(path, util.Box2Abs.fromRelBox(rnd.relBox(path.getBBox())));
 	var offset = this.render.offset;
 	if (offset != null)
-		path.translate(offset.x, offset.y);
+		path.translateAbs(offset.x, offset.y);
 };
 
 rnd.ReStruct.prototype.drawReactionPlus = function (id, item)
@@ -565,21 +639,23 @@ rnd.ReStruct.prototype.drawReactionPlus = function (id, item)
 	item.visel.add(path, util.Box2Abs.fromRelBox(rnd.relBox(path.getBBox())));
 	var offset = this.render.offset;
 	if (offset != null)
-		path.translate(offset.x, offset.y);
+		path.translateAbs(offset.x, offset.y);
 };
 
 rnd.ReStruct.prototype.drawSGroups = function ()
 {
-	this.sgroups.each(function (id, sgroup) {
+	util.each(this.molecule.sGroupForest.getSGroupsBFS().reverse(), function(id) {
+		var sgroup = this.sgroups.get(id);
 		var path = sgroup.draw(this.render);
-		this.addReObjectPath('data', sgroup.visel, path);
+		this.addReObjectPath('data', sgroup.visel, path, null, true);
+		sgroup.setHighlight(sgroup.highlight, this.render); // TODO: fix this
 	}, this);
 };
 
 rnd.ReStruct.prototype.drawFragments = function() {
     this.frags.each(function(id, frag) {
         var path = frag.draw(this.render, id);
-        if (path) this.addReObjectPath('data', frag.visel, path);
+        if (path) this.addReObjectPath('data', frag.visel, path, null, true);
         // TODO fragment selection & highlighting
     }, this);
 };
@@ -589,7 +665,7 @@ rnd.ReStruct.prototype.drawRGroups = function() {
         var drawing = rgroup.draw(this.render);
         for (var group in drawing) {
             while (drawing[group].length > 0) {
-                this.addReObjectPath(group, rgroup.visel, drawing[group].shift());
+                this.addReObjectPath(group, rgroup.visel, drawing[group].shift(), null, true);
             }
         }
         // TODO rgroup selection & highlighting
@@ -612,23 +688,6 @@ rnd.ReStruct.prototype.getGroupBB = function (type)
 	}, type, this);
 
 	return bb;
-};
-
-rnd.ReStruct.prototype.updateHalfBonds = function () {
-	for (var aid in this.atomsChanged) {
-		if (this.atomsChanged[aid] < 1)
-			continue;
-		this.molecule.atomUpdateHalfBonds(aid);
-	}
-};
-
-rnd.ReStruct.prototype.sortNeighbors = function () {
-	// sort neighbor halfbonds in CCW order
-	for (var aid in this.atomsChanged) {
-		if (this.atomsChanged[aid] < 1)
-			continue;
-		this.molecule.atomSortNeighbors(aid);
-	}
 };
 
 rnd.ReStruct.prototype.setHydrogenPos = function () {
@@ -675,85 +734,14 @@ rnd.ReLoop = function (loop)
 	this.centre = new util.Vec2();
 	this.radius = new util.Vec2();
 };
-
-rnd.ReStruct.prototype.findLoops = function ()
-{
-	var struct = this.molecule;
-	// Starting from each half-bond not known to be in a loop yet,
-	//  follow the 'next' links until the initial half-bond is reached or
-	//  the length of the sequence exceeds the number of half-bonds available.
-	// In a planar graph, as long as every bond is a part of some "loop" -
-	//  either an outer or an inner one - every iteration either yields a loop
-	//  or doesn't start at all. Thus this has linear complexity in the number
-	//  of bonds for planar graphs.
-	var j, k, c, loop, loopId;
-	struct.halfBonds.each(function (i, hb) {
-		if (hb.loop == -1)
-		{
-			for (j = i, c = 0, loop = [];
-				c <= struct.halfBonds.count();
-				j = struct.halfBonds.get(j).next, ++c)
-				{
-				if (c > 0 && j == i) {
-					var totalAngle = 2 * Math.PI;
-					var convex = true;
-					for (k = 0; k < loop.length; ++k)
-					{
-						var hba = struct.halfBonds.get(loop[k]);
-						var hbb = struct.halfBonds.get(loop[(k + 1) % loop.length]);
-						var angle = Math.atan2(
-								util.Vec2.cross(hba.dir, hbb.dir),
-								util.Vec2.dot(hba.dir, hbb.dir));
-						if (angle > 0)
-							convex = false;
-						if (hbb.contra == loop[k]) // back and force one edge
-							totalAngle += Math.PI;
-						else
-							totalAngle += angle;
-					}
-					if (Math.abs(totalAngle) < Math.PI) // loop is internal
-						loopId = struct.loops.add(new chem.Loop(loop, struct, convex));
-					else
-						loopId = -2;
-					loop.each(function(hbid){
-						struct.halfBonds.get(hbid).loop = loopId;
-						this.markBond(struct.halfBonds.get(hbid).bid, 1);
-					}, this);
-					if (loopId >= 0)
-						this.reloops.set(loopId, new rnd.ReLoop(struct.loops.get(loopId)));
-					break;
-				} else {
-					loop.push(j);
-				}
-			}
-		}
-	}, this);
-};
+rnd.ReLoop.prototype = new rnd.ReObject();
+rnd.ReLoop.isSelectable = function() { return false; }
 
 rnd.ReStruct.prototype.coordProcess = function (norescale)
 {
     if (!norescale) {
         this.molecule.rescale();
     }
-};
-
-rnd.ReStruct.prototype.scaleCoordinates = function() // TODO: check if we need that and why
-{
-    var render = this.render;
-	var settings = render.settings;
-	var scale = function (item) {
-		item.ps = render.ps(item.pp);
-	};
-        var id;
-	for (id in this.atomsChanged) {
-		scale(this.atoms.get(id).a);
-	}
-	for (id in this.rxnArrowsChanged) {
-		scale(this.rxnArrows.get(id).item);
-	}
-	for (id in this.rxnPlusesChanged) {
-		scale(this.rxnPluses.get(id).item);
-	}
 };
 
 rnd.ReStruct.prototype.notifyAtomAdded = function(aid) {
@@ -834,10 +822,11 @@ rnd.ReStruct.prototype.loopRemove = function (loopId)
 };
 
 rnd.ReStruct.prototype.loopIsValid = function (rlid, reloop) {
+    var halfBonds = this.molecule.halfBonds;
 	var loop = reloop.loop;
 	var bad = false;
 	loop.hbs.each(function(hbid){
-		if (!this.molecule.halfBonds.has(hbid)) {
+		if (!halfBonds.has(hbid) || halfBonds.get(hbid).loop !== rlid) {
 			bad = true;
 		}
 	}, this);
@@ -885,6 +874,7 @@ rnd.ReRxnPlus = function (/*chem.RxnPlus*/plus)
 	this.item = plus;
 };
 rnd.ReRxnPlus.prototype = new rnd.ReObject();
+rnd.ReRxnPlus.isSelectable = function() { return true; }
 
 rnd.ReRxnPlus.findClosest = function (render, p) {
     var minDist;
@@ -899,17 +889,17 @@ rnd.ReRxnPlus.findClosest = function (render, p) {
         }
     });
     return ret;
-}
+};
 
 rnd.ReRxnPlus.prototype.highlightPath = function(render) {
     var p = render.ps(this.item.pp);
     var s = render.settings.scaleFactor;
     return render.paper.rect(p.x - s/4, p.y - s/4, s/2, s/2, s/8);
-}
+};
 
 rnd.ReRxnPlus.prototype.drawHighlight = function(render) {
     var ret = this.highlightPath(render).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
 };
 
@@ -924,6 +914,7 @@ rnd.ReRxnArrow = function (/*chem.RxnArrow*/arrow)
     this.item = arrow;
 };
 rnd.ReRxnArrow.prototype = new rnd.ReObject();
+rnd.ReRxnArrow.isSelectable = function() { return true; }
 
 rnd.ReRxnArrow.findClosest = function(render, p) {
     var minDist;
@@ -946,11 +937,11 @@ rnd.ReRxnArrow.prototype.highlightPath = function(render) {
     var p = render.ps(this.item.pp);
     var s = render.settings.scaleFactor;
     return render.paper.rect(p.x - s, p.y - s/4, 2*s, s/2, s/8);
-}
+};
 
 rnd.ReRxnArrow.prototype.drawHighlight = function(render) {
     var ret = this.highlightPath(render).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
 };
 
@@ -964,6 +955,7 @@ rnd.ReFrag = function(/*chem.Struct.Fragment*/frag) {
     this.item = frag;
 };
 rnd.ReFrag.prototype = new rnd.ReObject();
+rnd.ReFrag.isSelectable = function() { return false; }
 
 rnd.ReFrag.findClosest = function(render, p, skip, minDist) {
     minDist = Math.min(minDist || render.opt.selectionDistanceCoefficient, render.opt.selectionDistanceCoefficient);
@@ -1015,7 +1007,7 @@ rnd.ReFrag.prototype.calcBBox = function(render, fid) { // TODO need to review p
                 var ext = new util.Vec2(0.05 * 3, 0.05 * 3);
                 bba = bba.extend(ext, ext);
             } else {
-                bba = bba.transform(render.scaled2obj, render);
+                bba = bba.translate((render.offset || new util.Vec2()).negated()).transform(render.scaled2obj, render);
             }
             ret = (ret ? util.Box2Abs.union(ret, bba) : bba);
         }
@@ -1034,16 +1026,26 @@ rnd.ReFrag.prototype._draw = function(render, fid, attrs) { // TODO need to revi
     }
 };
 
-rnd.ReFrag.prototype.draw = function(render, fid) { // TODO need to review parameter list
+rnd.ReFrag.prototype.draw = function(render) {
     return null;//this._draw(render, fid, { 'stroke' : 'lightgray' }); // [RB] for debugging only
 };
 
-rnd.ReFrag.prototype.drawHighlight = function(render) { // TODO need to review parameter list
+rnd.ReFrag.prototype.drawHighlight = function(render) {
+    // Do nothing. This method shouldn't actually be called.
+}
+
+rnd.ReFrag.prototype.setHighlight = function(highLight, render) {
     var fid = render.ctab.frags.keyOf(this);
     if (!Object.isUndefined(fid)) {
-        var ret = this._draw(render, fid, render.styles.highlightStyle/*{ 'fill' : 'red' }*/);
-        render.addItemPath(this.visel, 'highlighting', ret);
-        return ret;
+        render.ctab.atoms.each(function(aid, atom) {
+            if (atom.a.fragment == fid) {
+		atom.setHighlight(highLight, render);
+	    }
+        }, this);
+        render.ctab.bonds.each(function(bid, bond) {
+            if (render.ctab.atoms.get(bond.b.begin).a.fragment == fid)
+		bond.setHighlight(highLight, render);
+        }, this);
     } else {
         // TODO abnormal situation, fragment does not belong to the render
     }
@@ -1052,21 +1054,40 @@ rnd.ReFrag.prototype.drawHighlight = function(render) { // TODO need to review p
 rnd.ReRGroup = function(/*chem.Struct.RGroup*/rgroup) {
     this.init(rnd.Visel.TYPE.RGROUP);
 
+    this.labelBox = null;
     this.item = rgroup;
 };
 rnd.ReRGroup.prototype = new rnd.ReObject();
+rnd.ReRGroup.isSelectable = function() { return false; }
+
+rnd.ReRGroup.prototype.getAtoms = function(render) {
+    var ret = [];
+    this.item.frags.each(function(fnum, fid) {
+        ret = ret.concat(render.ctab.frags.get(fid).fragGetAtoms(render, fid));
+    });
+    return ret;
+};
+
+rnd.ReRGroup.prototype.getBonds = function(render) {
+    var ret = [];
+    this.item.frags.each(function(fnum, fid) {
+        ret = ret.concat(render.ctab.frags.get(fid).fragGetBonds(render, fid));
+    });
+    return ret;
+};
 
 rnd.ReRGroup.findClosest = function(render, p, skip, minDist) {
     minDist = Math.min(minDist || render.opt.selectionDistanceCoefficient, render.opt.selectionDistanceCoefficient);
     var ret;
     render.ctab.rgroups.each(function(rgid, rgroup) {
         if (rgid != skip) {
-            var bb = rgroup.calcVBox(render);
-            if (bb.p0.y < p.y && bb.p1.y > p.y && bb.p0.x < p.x && bb.p1.x > p.x) {
-                var xDist = Math.min(Math.abs(bb.p0.x - p.x), Math.abs(bb.p1.x - p.x));
-                if (!ret || xDist < minDist) {
-                    minDist = xDist;
-                    ret = { 'id' : rgid, 'dist' : minDist };
+            if (rgroup.labelBox) { // should be true at this stage, as the label is visible
+                if (rgroup.labelBox.contains(p, 0.5)) { // inside the box or within 0.5 units from the edge
+                    var dist = util.Vec2.dist(rgroup.labelBox.centre(), p);
+                    if (!ret || dist < minDist) {
+                        minDist = dist;
+                        ret = { 'id' : rgid, 'dist' : minDist };
+                    }
                 }
             }
         }
@@ -1086,17 +1107,28 @@ rnd.ReRGroup.prototype.calcBBox = function(render) {
     return ret;
 };
 
+rnd.ReRGroup.drawBrackets = function (set, render, bb, d, n) {
+    d = d || new util.Vec2(1, 0);
+    var bracketWidth = Math.min(0.25, bb.sz().x * 0.3);
+    var height = bb.p1.y - bb.p0.y;
+    var cy = 0.5 * (bb.p1.y + bb.p0.y);
+    var leftBracket = chem.SGroup.drawBracket(render, render.paper, render.styles, d.negated(), d.negated().rotateSC(1, 0), new util.Vec2(bb.p0.x, cy), bracketWidth, height);
+    var rightBracket = chem.SGroup.drawBracket(render, render.paper, render.styles, d, d.rotateSC(1, 0), new util.Vec2(bb.p1.x, cy), bracketWidth, height);
+    set.push(leftBracket, rightBracket);
+};
+
 rnd.ReRGroup.prototype.draw = function(render) { // TODO need to review parameter list
     var bb = this.calcBBox(render);
     var settings = render.settings;
     if (bb) {
         var ret = { 'data' : [] };
-        var p0 = render.obj2scaled(new util.Vec2(bb.p0.x, bb.p0.y));
-        var p1 = render.obj2scaled(new util.Vec2(bb.p1.x, bb.p1.y));
+        var p0 = render.obj2scaled(bb.p0);
+        var p1 = render.obj2scaled(bb.p1);
         var brackets = render.paper.set();
-        chem.SGroup.drawBrackets(brackets, render, render.paper, settings, render.styles, bb);
+        rnd.ReRGroup.drawBrackets(brackets, render, bb);
         ret.data.push(brackets);
         var key = render.ctab.rgroups.keyOf(this);
+        var labelSet = render.paper.set();
         var label = render.paper.text(p0.x, (p0.y + p1.y)/2, 'R' + key + '=')
             .attr({
 				'font' : settings.font,
@@ -1104,7 +1136,8 @@ rnd.ReRGroup.prototype.draw = function(render) { // TODO need to review paramete
 				'fill' : 'black'
 			});
         var labelBox = rnd.relBox(label.getBBox());
-        label.translate(-labelBox.width/2-settings.lineWidth, 0);
+        label.translateAbs(-labelBox.width/2-settings.lineWidth, 0);
+        labelSet.push(label);
         var logicStyle = {
 				'font' : settings.font,
 				'font-size' : settings.fontRLogic,
@@ -1139,11 +1172,13 @@ rnd.ReRGroup.prototype.draw = function(render) { // TODO need to review paramete
             var logicPath = render.paper.text(p0.x, (p0.y + p1.y)/2, logic[i]).attr(logicStyle);
             var logicBox = rnd.relBox(logicPath.getBBox());
             shift += logicBox.height/2;
-            logicPath.translate(-logicBox.width/2-6*settings.lineWidth, shift);
+            logicPath.translateAbs(-logicBox.width/2-6*settings.lineWidth, shift);
             shift += logicBox.height/2 + settings.lineWidth/2;
             ret.data.push(logicPath);
+            labelSet.push(logicPath);
         }
         ret.data.push(label);
+        this.labelBox = util.Box2Abs.fromRelBox(labelSet.getBBox()).transform(render.scaled2obj, render);
         return ret;
     } else {
         // TODO abnormal situation, empty fragments must be destroyed by tools
@@ -1152,19 +1187,27 @@ rnd.ReRGroup.prototype.draw = function(render) { // TODO need to review paramete
 };
 
 rnd.ReRGroup.prototype._draw = function(render, rgid, attrs) { // TODO need to review parameter list
-    var bb = this.calcVBox(render).extend(this.__ext, this.__ext);
+    var bb = this.getVBoxObj(render).extend(this.__ext, this.__ext);
     if (bb) {
-        var p0 = render.obj2scaled(new util.Vec2(bb.p0.x, bb.p0.y));
-        var p1 = render.obj2scaled(new util.Vec2(bb.p1.x, bb.p1.y));
+        var p0 = render.obj2scaled(bb.p0);
+        var p1 = render.obj2scaled(bb.p1);
         return render.paper.rect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y, 0).attr(attrs);
     }
 };
 
-rnd.ReRGroup.prototype.drawHighlight = function(render) { // TODO need to review parameter list
+rnd.ReRGroup.prototype.drawHighlight = function(render) {
     var rgid = render.ctab.rgroups.keyOf(this);
     if (!Object.isUndefined(rgid)) {
         var ret = this._draw(render, rgid, render.styles.highlightStyle/*{ 'fill' : 'red' }*/);
-        render.addItemPath(this.visel, 'highlighting', ret);
+        render.ctab.addReObjectPath('highlighting', this.visel, ret);
+/*
+        this.getAtoms(render).each(function(aid) {
+            render.ctab.atoms.get(aid).drawHighlight(render);
+        }, this);
+*/
+        this.item.frags.each(function(fnum, fid) {
+            render.ctab.frags.get(fid).drawHighlight(render);
+        }, this);
         return ret;
     } else {
         // TODO abnormal situation, fragment does not belong to the render
@@ -1177,6 +1220,8 @@ rnd.ReSGroup = function(sgroup) {
     this.item = sgroup;
 };
 rnd.ReSGroup.prototype = new rnd.ReObject();
+rnd.ReSGroup.isSelectable = function() { return false; }
+
 
 rnd.ReSGroup.findClosest = function(render, p) {
 	var ret = null;
@@ -1223,24 +1268,17 @@ rnd.ReSGroup.prototype.drawHighlight = function(render) {
 
     var set = paper.set();
     sg.highlighting = paper
-        .path("M{0},{1}L{2},{3}L{4},{5}L{6},{7}L{0},{1}", a0.x, a0.y, a1.x, a1.y, b1.x, b1.y, b0.x, b0.y)
+        .path("M{0},{1}L{2},{3}L{4},{5}L{6},{7}L{0},{1}", tfx(a0.x), tfx(a0.y), tfx(a1.x), tfx(a1.y), tfx(b1.x), tfx(b1.y), tfx(b0.x), tfx(b0.y))
         .attr(styles.highlightStyle);
     set.push(sg.highlighting);
-    render.ctab.addReObjectPath('highlighting', this.visel, sg.highlighting);
 
-    var atoms = chem.SGroup.getAtoms(render.ctab.molecule, sg);
-
-    atoms.each(function (id)
-    {
-        var atom = render.ctab.atoms.get(id);
-        var ps = render.ps(atom.a.pp);
-        atom.sGroupHighlighting = paper
-        .circle(ps.x, ps.y, 0.7 * styles.atomSelectionPlateRadius)
-        .attr(styles.sGroupHighlightStyle);
-        set.push(atom.sGroupHighlighting);
-        render.ctab.addReObjectPath('highlighting', this.visel, atom.sGroupHighlighting);
+    chem.SGroup.getAtoms(render.ctab.molecule, sg).each(function(aid) {
+        set.push(render.ctab.atoms.get(aid).makeHighlightPlate(render));
     }, this);
-    return set;
+    chem.SGroup.getBonds(render.ctab.molecule, sg).each(function(bid) {
+        set.push(render.ctab.bonds.get(bid).makeHighlightPlate(render));
+    }, this);
+    render.ctab.addReObjectPath('highlighting', this.visel, set);
 };
 
 rnd.ReDataSGroupData = function (sgroup)
@@ -1251,6 +1289,7 @@ rnd.ReDataSGroupData = function (sgroup)
 };
 
 rnd.ReDataSGroupData.prototype = new rnd.ReObject();
+rnd.ReDataSGroupData.isSelectable = function() { return true; }
 
 rnd.ReDataSGroupData.findClosest = function (render, p) {
     var minDist = null;
@@ -1268,18 +1307,18 @@ rnd.ReDataSGroupData.findClosest = function (render, p) {
         }
     });
     return ret;
-}
+};
 
 rnd.ReDataSGroupData.prototype.highlightPath = function(render) {
     var box = this.sgroup.dataArea;
     var p0 = render.obj2scaled(box.p0);
     var sz = render.obj2scaled(box.p1).sub(p0);
     return render.paper.rect(p0.x, p0.y, sz.x, sz.y);
-}
+};
 
 rnd.ReDataSGroupData.prototype.drawHighlight = function(render) {
     var ret = this.highlightPath(render).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
 };
 
@@ -1290,10 +1329,11 @@ rnd.ReDataSGroupData.prototype.makeSelectionPlate = function (restruct, paper, s
 rnd.ReChiralFlag = function (pos)
 {
     this.init(rnd.Visel.TYPE.CHIRAL_FLAG);
-    
+
     this.pp = pos;
 };
 rnd.ReChiralFlag.prototype = new rnd.ReObject();
+rnd.ReChiralFlag.isSelectable = function() { return true; }
 
 rnd.ReChiralFlag.findClosest = function(render, p) {
     var minDist;
@@ -1318,11 +1358,11 @@ rnd.ReChiralFlag.prototype.highlightPath = function(render) {
     var sz = box.p1.sub(box.p0);
     var p0 = box.p0.sub(render.offset);
     return render.paper.rect(p0.x, p0.y, sz.x, sz.y);
-}
+};
 
 rnd.ReChiralFlag.prototype.drawHighlight = function(render) {
     var ret = this.highlightPath(render).attr(render.styles.highlightStyle);
-    render.addItemPath(this.visel, 'highlighting', ret);
+    render.ctab.addReObjectPath('highlighting', this.visel, ret);
     return ret;
 };
 
@@ -1340,5 +1380,18 @@ rnd.ReChiralFlag.prototype.draw = function(render) {
             'font-size' : settings.fontsz,
             'fill' : '#000'
     });
-    render.addItemPath(this.visel, 'data', this.path);
+    render.ctab.addReObjectPath('data', this.visel, this.path, null, true);
+};
+
+rnd.ReStruct.maps = {
+    'atoms':       rnd.ReAtom,
+    'bonds':       rnd.ReBond,
+    'rxnPluses':   rnd.ReRxnPlus,
+    'rxnArrows':   rnd.ReRxnArrow,
+    'frags':       rnd.ReFrag,
+    'rgroups':     rnd.ReRGroup,
+    'sgroupData':  rnd.ReDataSGroupData,
+    'chiralFlags': rnd.ReChiralFlag,
+    'sgroups':     rnd.ReSGroup,
+    'reloops':     rnd.ReLoop
 };

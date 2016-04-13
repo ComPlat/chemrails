@@ -21,16 +21,6 @@ rnd.logcnt = 0;
 rnd.logmouse = false;
 rnd.hl = false;
 
-/** @deprecated */
-rnd.mouseEventNames = [
-	'Click',
-	'DblClick',
-	'MouseOver',
-	'MouseDown',
-	'MouseMove',
-	'MouseOut'
-	];
-
 rnd.logMethod = function () { };
 //rnd.logMethod = function (method) {console.log("METHOD: " + method);}
 
@@ -47,22 +37,31 @@ rnd.RenderDummy = function (clientArea, scale, opt, viewSz)
 	this.update = function(){};
 };
 
+rnd.RenderOptions = function (opt)
+{
+	opt = opt || {};
+
+	// flags for debugging
+	this.showSelectionRegions = opt.showSelectionRegions || false;
+	this.showAtomIds = opt.showAtomIds || false;
+	this.showBondIds = opt.showBondIds || false;
+	this.showHalfBondIds = opt.showHalfBondIds || false;
+	this.showLoopIds = opt.showLoopIds || false;
+
+	// rendering customization flags
+	this.showValenceWarnings = !Object.isUndefined(opt.showValenceWarnings) ? opt.showValenceWarnings : true;
+	this.autoScale = opt.autoScale || false; // scale structure to fit into the given view box, used in view mode
+	this.autoScaleMargin = opt.autoScaleMargin || 0;
+	this.atomColoring = opt.atomColoring || 0;
+	this.hideImplicitHydrogen = opt.hideImplicitHydrogen || false;
+	this.hideTerminalLabels = opt.hideTerminalLabels || false;
+	this.ignoreMouseEvents = opt.ignoreMouseEvents || false; // for view mode
+	this.selectionDistanceCoefficient = (opt.selectionDistanceCoefficient || 0.4) - 0;
+}
+
 rnd.Render = function (clientArea, scale, opt, viewSz)
 {
-	this.opt = opt || {};
-	this.opt.showSelectionRegions = this.opt.showSelectionRegions || false;
-	this.opt.showAtomIds = this.opt.showAtomIds || false;
-	this.opt.showBondIds = this.opt.showBondIds || false;
-	this.opt.showHalfBondIds = this.opt.showHalfBondIds || false;
-	this.opt.showLoopIds = this.opt.showLoopIds || false;
-	this.opt.showValenceWarnings = !Object.isUndefined(this.opt.showValenceWarnings) ? this.opt.showValenceWarnings : true;
-	this.opt.autoScale = this.opt.autoScale || false;
-	this.opt.autoScaleMargin = this.opt.autoScaleMargin || 0;
-	this.opt.atomColoring = this.opt.atomColoring || 0;
-	this.opt.hideImplicitHydrogen = this.opt.hideImplicitHydrogen || false;
-	this.opt.hideTerminalLabels = this.opt.hideTerminalLabels || false;
-	this.opt.ignoreMouseEvents = this.opt.ignoreMouseEvents || false;
-	this.opt.selectionDistanceCoefficient = (this.opt.selectionDistanceCoefficient || 0.4) - 0;
+	this.opt = new rnd.RenderOptions(opt);
 
 	this.useOldZoom = Prototype.Browser.IE;
 	this.scale = scale || 100;
@@ -74,15 +73,6 @@ rnd.Render = function (clientArea, scale, opt, viewSz)
 	this.size = new util.Vec2();
 	this.viewSz = viewSz || new util.Vec2(clientArea['clientWidth'] || 100, clientArea['clientHeight'] || 100);
 	this.bb = new util.Box2Abs(new util.Vec2(), this.viewSz);
-    /** @deprecated */
-	this.curItem = {
-		'type':'Canvas',
-		'id':-1
-	};
-    /** @deprecated */
-	this.pagePos = new util.Vec2();
-    /** @deprecated */
-	this.muteMouseOutMouseOver = false;
 	this.dirty = true;
 	this.selectionRect = null;
 	this.rxnArrow = null;
@@ -100,20 +90,55 @@ rnd.Render = function (clientArea, scale, opt, viewSz)
 
 	this.clientAreaPos = new util.Vec2(valueL, valueT);
 
+    // [RB] KETCHER-396 (Main toolbar is grayed after the Shift-selection of some atoms/bonds)
+    // here we prevent that freaking "accelerators menu" on IE8
+    //BEGIN
+    clientArea.observe('selectstart', function(event) {
+        util.stopEventPropagation(event); return util.preventDefault(event);
+    });
+    //END
+
     // rbalabanov: two-fingers scrolling & zooming for iPad
     // TODO should be moved to touch.js module, re-factoring needed
     //BEGIN
+    var self = this;
+    self.longTapFlag = false;
+    self.longTapTimeout = null;
+    self.longTapTouchstart = null;
+
+    self.setLongTapTimeout = function(event) {
+        self.longTapFlag = false;
+        self.longTapTouchstart = event;
+        self.longTapTimeout = setTimeout(function() {
+            self.longTapFlag = true;
+            self.longTapTimeout = null;
+        }, 500);
+    };
+
+    self.resetLongTapTimeout = function(resetFlag) {
+        clearTimeout(self.longTapTimeout);
+        self.longTapTimeout = null;
+        if (resetFlag) {
+            self.longTapTouchstart = null;
+            self.longTapFlag = false;
+        }
+    };
+
     clientArea.observe('touchstart', function(event) {
+        self.resetLongTapTimeout(true);
         if (event.touches.length == 2) {
             this._tui = this._tui || {};
             this._tui.center = {
-                pageX : (event.touches[0].pageX + event.touches[1].pageX) / 2,
-                pageY : (event.touches[0].pageY + event.touches[1].pageY) / 2
+                pageX: (event.touches[0].pageX + event.touches[1].pageX) / 2,
+                pageY: (event.touches[0].pageY + event.touches[1].pageY) / 2
             };
             ui.setZoomStaticPointInit(ui.page2obj(this._tui.center));
+        } else if (event.touches.length == 1) {
+            self.setLongTapTimeout(event);
         }
     });
     clientArea.observe('touchmove', function(event) {
+        self.resetLongTapTimeout(true);
         if ('_tui' in this && event.touches.length == 2) {
             this._tui.center = {
                 pageX : (event.touches[0].pageX + event.touches[1].pageX) / 2,
@@ -154,85 +179,63 @@ rnd.Render = function (clientArea, scale, opt, viewSz)
 
     //rbalabanov: temporary
     //BEGIN
-    clientArea.observe('mouseup', function(event) {
-        ui.render.current_tool && ui.render.current_tool.processEvent('OnMouseUp', event);
-    });
     clientArea.observe('touchend', function(event) {
-        if (event.touches.length == 0) {
-            ui.render.current_tool && ui.render.current_tool.processEvent('OnMouseUp', new rnd.MouseEvent(event));
+        self.resetLongTapTimeout(false);
+        if (self.longTapFlag) {
+            ui.render.current_tool && ui.render.current_tool.processEvent('OnDblClick', self.longTapTouchstart);
+            self.resetLongTapTimeout(true);
+            return util.preventDefault(event);
+        } else if (event.touches.length == 0) {
+            ui.render.current_tool && ui.render.current_tool.processEvent('OnMouseUp', event);
         }
     });
     //END
 
-	if (!this.opt.ignoreMouseEvents) {
-		// assign canvas events handlers
-		rnd.mouseEventNames.each(function(eventName){
-            var bindEventName = eventName.toLowerCase();
-            bindEventName = EventMap[bindEventName] || bindEventName;
-			clientArea.observe(bindEventName, function(event) {
-                if (!ui || !ui.is_touch) {
-                    // TODO: karulin: fix this on touch devices if needed
-                    var co = clientArea.cumulativeOffset();
-                    co = new util.Vec2(co[0], co[1]);
-                    var vp = new util.Vec2(event.clientX, event.clientY).sub(co);
-                    var sz = new util.Vec2(clientArea.clientWidth, clientArea.clientHeight);
-                    if (!(vp.x > 0 && vp.y > 0 && vp.x < sz.x && vp.y < sz.y)) // ignore events on the hidden part of the canvas
-                        return util.preventDefault(event);
-                }
+        if (!this.opt.ignoreMouseEvents) {
+            // assign canvas events handlers
+            ['Click', 'DblClick', 'MouseDown', 'MouseMove', 'MouseUp', 'MouseLeave'].each(function(eventName){
+                var bindEventName = eventName.toLowerCase();
+                bindEventName = EventMap[bindEventName] || bindEventName;
+                clientArea.observe(bindEventName, function(event) {
+                    if (eventName != 'MouseLeave') if (!ui || !ui.is_touch) {
+                        // TODO: karulin: fix this on touch devices if needed
+                        var co = clientArea.cumulativeOffset();
+                        co = new util.Vec2(co[0], co[1]);
+                        var vp = new util.Vec2(event.clientX, event.clientY).sub(co);
+                        var sz = new util.Vec2(clientArea.clientWidth, clientArea.clientHeight);
+                        if (!(vp.x > 0 && vp.y > 0 && vp.x < sz.x && vp.y < sz.y)) {// ignore events on the hidden part of the canvas
+                            if (eventName == "MouseMove") {
+                                // [RB] here we alse emulate mouseleave when user drags mouse over toolbar (see KETCHER-433)
+                                ui.render.current_tool.processEvent('OnMouseLeave', event);
+                            }
+                            return util.preventDefault(event);
+                        }
+                    }
 
-                var ntHandled = ui.render.current_tool && ui.render.current_tool.processEvent('On' + eventName, event);
-                var name = '_onCanvas' + eventName;
-				if (!(ui.render.current_tool) && (!('touches' in event) || event.touches.length == 1) && render[name])
-					render[name](new rnd.MouseEvent(event));
-				util.stopEventPropagation(event);
-                if (bindEventName != 'touchstart' && (bindEventName != 'touchmove' || event.touches.length != 2))
-                    return util.preventDefault(event);
-			});
-		}, this);
-	}
+                    ui.render.current_tool.processEvent('On' + eventName, event);
+                    util.stopEventPropagation(event);
+                    if (bindEventName != 'touchstart' && (bindEventName != 'touchmove' || event.touches.length != 2))
+                        return util.preventDefault(event);
+                });
+            }, this);
+        }
 
 	this.ctab = new rnd.ReStruct(new chem.Struct(), this);
 	this.settings = null;
 	this.styles = null;
-    /** @deprecated */
-	this.checkCurItem = true;
 
 	this.onCanvasOffsetChanged = null; //function(newOffset, oldOffset){};
 	this.onCanvasSizeChanged = null; //function(newSize, oldSize){};
 };
 
-/**
- *
- * @param type
- * @param id
- * @param event
- * @deprecated
- */
-rnd.Render.prototype.setCurrentItem = function (type, id, event) {
-    if (this.current_tool) return;
-	var oldType = this.curItem.type, oldId = this.curItem.id;
-	if (type != oldType || id != oldId) {
-		this.curItem = {
-			'type':type,
-			'id':id
-		};
-		if (oldType == 'Canvas'
-			|| (oldType == 'Atom' && this.ctab.atoms.has(oldId))
-			|| (oldType == 'RxnArrow' && this.ctab.rxnArrows.has(oldId))
-			|| (oldType == 'RxnPlus' && this.ctab.rxnPluses.has(oldId))
-			|| (oldType == 'Bond' && this.ctab.bonds.has(oldId))
-			|| (oldType == 'SGroup' && this.ctab.sgroups.has(oldId))) {
-			this.callEventHandler(event, 'MouseOut', oldType, oldId);
-		}
-		this.callEventHandler(event, 'MouseOver', type, id);
-	}
-};
-
 rnd.Render.prototype.view2scaled = function (p, isRelative) {
-	if (!this.useOldZoom)
-		p = p.scaled(1/this.zoom);
-	p = isRelative ? p : p.add(ui.scrollPos().scaled(1/this.zoom)).sub(this.offset);
-	return p;
+    var scroll = ui.scrollPos();
+    if (!this.useOldZoom) {
+        p = p.scaled(1/this.zoom);
+        scroll = scroll.scaled(1/this.zoom);
+    }
+    p = isRelative ? p : p.add(scroll).sub(this.offset);
+    return p;
 };
 
 rnd.Render.prototype.scaled2view = function (p, isRelative) {
@@ -256,25 +259,6 @@ rnd.Render.prototype.view2obj = function (v, isRelative) {
 
 rnd.Render.prototype.obj2view = function (v, isRelative) {
 	return this.scaled2view(this.obj2scaled(v, isRelative));
-};
-
-/**
- *
- * @param event
- * @deprecated
- */
-rnd.Render.prototype.checkCurrentItem = function (event) {
-    if (this.current_tool) return;
-	if (this.offset) {
-		this.pagePos = new util.Vec2(event.pageX, event.pageY);
-		var clientPos = null;
-		if ('ui' in window && 'page2obj' in ui) // TODO: the render shouldn't be aware of the page coordinates
-			clientPos = new util.Vec2(ui.page2obj(event));
-		else
-			clientPos = this.pagePos.sub(this.clientAreaPos);
-		var item = this.findClosestItem(clientPos);
-		this.setCurrentItem(item.type, item.id, event);
-	}
 };
 
 rnd.Render.prototype.findItem = function(event, maps, skip) {
@@ -301,36 +285,6 @@ rnd.Render.prototype.findItem = function(event, maps, skip) {
 rnd.Render.prototype.client2Obj = function (clientPos) {
 	return new util.Vec2(clientPos).sub(this.offset);
 };
-
-/**
- *
- * @param event
- * @param eventName
- * @param type
- * @param id
- * @deprecated
- */
-rnd.Render.prototype.callEventHandler = function (event, eventName, type, id) {
-    if (this.current_tool) return;
-	var name = 'on' + type + eventName;
-	var handled = false;
-	if (this[name])
-		handled = this[name](event, id);
-	if (!handled && type != 'Canvas') {
-		var name1 = 'onCanvas' + eventName;
-		if (this[name1])
-			handled = this[name1](event);
-	}
-};
-
-util.each(['MouseMove','MouseDown','MouseUp','Click','DblClick'],
-	function(eventName) {
-		rnd.Render.prototype['_onCanvas' + eventName] = function(event){
-			this.checkCurrentItem(event);
-			this.callEventHandler(event, eventName, this.curItem.type, this.curItem.id);
-		}
-	}
-);
 
 rnd.Render.prototype.setMolecule = function (ctab, norescale)
 {
@@ -362,33 +316,42 @@ rnd.Render.prototype.invalidateAtom = function (aid, level)
 			var hb = hbs.get(hbid);
 			this.ctab.markBond(hb.bid, 1);
 			this.ctab.markAtom(hb.end, 0);
+            if (level)
+                this.invalidateLoop(hb.bid);
 		}
 	}
 };
 
-rnd.Render.prototype.invalidateBond = function (bid, invalidateLoops)
+rnd.Render.prototype.invalidateLoop = function (bid)
 {
 	var bond = this.ctab.bonds.get(bid);
+    var lid1 = this.ctab.molecule.halfBonds.get(bond.b.hb1).loop;
+    var lid2 = this.ctab.molecule.halfBonds.get(bond.b.hb2).loop;
+    if (lid1 >= 0)
+        this.ctab.loopRemove(lid1);
+    if (lid2 >= 0)
+        this.ctab.loopRemove(lid2);
+};
+
+rnd.Render.prototype.invalidateBond = function (bid)
+{
+	var bond = this.ctab.bonds.get(bid);
+        this.invalidateLoop(bid);
 	this.invalidateAtom(bond.b.begin, 0);
 	this.invalidateAtom(bond.b.end, 0);
-	if (invalidateLoops) {
-		var lid1 = this.ctab.molecule.halfBonds.get(bond.b.hb1).loop;
-		var lid2 = this.ctab.molecule.halfBonds.get(bond.b.hb2).loop;
-		if (lid1 >= 0)
-			this.ctab.loopRemove(lid1);
-		if (lid2 >= 0)
-			this.ctab.loopRemove(lid2);
-	}
 };
 
 rnd.Render.prototype.invalidateItem = function (map, id, level)
 {
-	if (map == 'atoms')
+	if (map == 'atoms') {
 		this.invalidateAtom(id, level);
-	else if (map == 'bonds')
-		this.invalidateBond(id, level);
-	else
+    } else if (map == 'bonds') {
+		this.invalidateBond(id);
+        if (level > 0)
+            this.invalidateLoop(id);
+    } else {
 		this.ctab.markItem(map, id, level);
+    }
 };
 
 rnd.Render.prototype.atomGetDegree = function (aid)
@@ -546,9 +509,8 @@ rnd.Render.prototype.setSelection = function (selection)
 {
 	rnd.logMethod("setSelection");
 	for (var map in rnd.ReStruct.maps) {
-            if (map == 'frags' || map == 'rgroups')
-                continue;
-
+        if (!rnd.ReStruct.maps[map].isSelectable())
+            continue;
         var set = selection ? (selection[map] ? util.identityMap(selection[map]) : {}) : null;
 		this.ctab[map].each(function(id, item){
             var selected = set ? set[id] === id : item.selected;
@@ -590,7 +552,7 @@ rnd.Render.prototype.initStyles = function ()
 		'stroke':'darkgray',
 		'stroke-width':0.5*settings.lineWidth
 		};
-	this.styles.atomSelectionPlateRadius = settings.labelFontSize * 1.2 ;
+	this.styles.atomSelectionPlateRadius = settings.labelFontSize * 1.8 ;
 };
 
 rnd.Render.prototype.initSettings = function()
@@ -613,23 +575,10 @@ rnd.Render.prototype.initSettings = function()
 	settings.fontRLogic = this.settings.labelFontSize * 0.7;
 };
 
-rnd.Render.prototype.getBoundingBox = function ()
+rnd.Render.prototype.getStructCenter = function (selection)
 {
-	var bb = null, vbb;
-	this.ctab.eachVisel(function(visel){
-		vbb = visel.boundingBox;
-		if (vbb)
-			bb = bb ? util.Box2Abs.union(bb, vbb) : vbb.clone();
-	}, this);
-	if (!bb)
-		bb = new util.Box2Abs(0, 0, 0, 0);
-	return bb;
-};
-
-rnd.Render.prototype.getStructCenter = function ()
-{
-	var bb = this.getBoundingBox();
-	return this.scaled2obj(util.Vec2.lc2(bb.p0, 0.5, bb.p1, 0.5));
+	var bb = this.ctab.getVBoxObj(selection);
+	return util.Vec2.lc2(bb.p0, 0.5, bb.p1, 0.5);
 };
 
 rnd.Render.prototype.onResize = function ()
@@ -664,8 +613,7 @@ rnd.Render.prototype.setOffset = function (offset)
 	rnd.logMethod("setOffset");
 	var oldOffset = this.offset;
 	this.offset = offset;
-	if (this.onCanvasOffsetChanged)
-		this.onCanvasOffsetChanged(offset, oldOffset);
+	if (this.onCanvasOffsetChanged) this.onCanvasOffsetChanged(offset, oldOffset);
 };
 
 rnd.Render.prototype.getElementPos = function (obj)
@@ -691,7 +639,7 @@ rnd.Render.prototype.drawSelectionLine = function (p0, p1) {
 		p0 = this.obj2scaled(p0).add(this.offset);
 		p1 = this.obj2scaled(p1).add(this.offset);
 		this.selectionRect = this.paper.path(
-            'M' + p0.x.toString() + ',' + p0.y.toString() + 'L' + p1.x.toString() + ',' + p1.y.toString()
+            rnd.ReStruct.makeStroke(p0, p1)
         ).attr({'stroke':'gray', 'stroke-width':'1px'});
 	}
 };
@@ -765,10 +713,10 @@ rnd.Render.prototype.drawSelectionPolygon = function (r) {
     }
 	if (r && r.length > 1) {
 		var v = this.obj2scaled(r[r.length - 1]).add(this.offset);
-		var pstr = "M" + v.x.toString() + "," + v.y.toString();
+		var pstr = "M" + tfx(v.x) + "," + tfx(v.y);
 		for (var i = 0; i < r.length; ++i) {
 			v = this.obj2scaled(r[i]).add(this.offset);
-			pstr += "L" + v.x.toString() + "," + v.y.toString();
+			pstr += "L" + tfx(v.x) + "," + tfx(v.y);
 		}
 		this.selectionRect = this.paper.path(pstr).attr({'stroke':'gray', 'stroke-width':'1px'});
 	}
@@ -815,7 +763,7 @@ rnd.Render.prototype.isPointInPolygon = function (r, p) {
 
 rnd.Render.prototype.ps = function (pp) {
     return pp.scaled(this.settings.scaleFactor);
-}
+};
 
 rnd.Render.prototype.getElementsInPolygon = function (rr) {
 	rnd.logMethod("getElementsInPolygon");
@@ -913,68 +861,18 @@ rnd.Render.prototype.testPolygon = function (rr) {
 	this.drawSelectionPolygon(rr);
 };
 
-/**
- *
- * @param action
- * @param args
- * @deprecated
- */
-rnd.Render.prototype.processAction = function (action, args)
-{
-	var id = parseInt(args[0]);
-	if (action == 'atomRemove' && this.curItem.type == 'Atom'
-		&& this.curItem.id == id && this._onAtomMouseOut) {
-		this._onAtomMouseOut({
-			'pageX':this.pagePos.x,
-			'pageY':this.pagePos.y
-			},
-		this.curItem.id);
-	}
-	if (action == 'bondRemove' && this.curItem.type == 'Bond'
-		&& this.curItem.id == id && this._onBondMouseOut) {
-		this._onBondMouseOut({
-			'pageX':this.pagePos.x,
-			'pageY':this.pagePos.y
-			},
-		this.curItem.id);
-	}
-	if (action == 'rxnArrowRemove' && this.curItem.type == 'RxnArrow'
-		&& this.curItem.id == id && this._onRxnArrowMouseOut) {
-		this._onRxnArrowMouseOut({
-			'pageX':this.pagePos.x,
-			'pageY':this.pagePos.y
-			},
-		this.curItem.id);
-	}
-	if (action == 'rxnPlusRemove' && this.curItem.type == 'RxnPlus'
-		&& this.curItem.id == id && this._onRxnPlusMouseOut) {
-		this.onRxnArrowMouseOut({
-			'pageX':this.pagePos.x,
-			'pageY':this.pagePos.y
-			},
-		this.curItem.id);
-	}
-	this.muteMouseOutMouseOver = true;
-	var ret = this['_' + action].apply(this, args);
-	this.muteMouseOutMouseOver = false;
-	if (action.endsWith('Add'))
-		this.checkCurItem = true;
-	return ret;
-};
-
 rnd.Render.prototype.update = function (force)
 {
 	rnd.logMethod("update");
-	this.muteMouseOutMouseOver = true;
 
 	if (!this.settings || this.dirty) {
 		if (this.opt.autoScale)
 		{
 			var cbb = this.ctab.molecule.getCoordBoundingBox();
 			// this is only an approximation to select some scale that's close enough to the target one
-			var sy = cbb.max.y - cbb.min.y > 0 ? this.viewSz.y / (cbb.max.y - cbb.min.y) : 100;
-			var sx = cbb.max.x - cbb.min.x > 0 ? this.viewSz.x / (cbb.max.x - cbb.min.x) : 100;
-			this.scale = Math.max(sy, sx);
+			var sy = cbb.max.y - cbb.min.y > 0 ? 0.8*this.viewSz.y / (cbb.max.y - cbb.min.y) : 100;
+			var sx = cbb.max.x - cbb.min.x > 0 ? 0.8*this.viewSz.x / (cbb.max.x - cbb.min.x) : 100;
+			this.scale = Math.min(sy, sx);
 		}
 		this.initSettings();
 		this.initStyles();
@@ -990,18 +888,14 @@ rnd.Render.prototype.update = function (force)
 		$('log').innerHTML = time.toString() + '\n';
 	if (changes) {
 		var sf = this.settings.scaleFactor;
-		var bb = this.getBoundingBox();
+		var bb = this.ctab.getVBoxObj().transform(this.obj2scaled, this).translate(this.offset || new util.Vec2());
 
 		if (!this.opt.autoScale) {
 			var ext = util.Vec2.UNIT.scaled(sf);
 			bb = bb.extend(ext, ext);
-			if (this.bb)
-				this.bb = util.Box2Abs.union(this.bb, bb);
-			else
-			{
-				var d = this.viewSz.sub(bb.sz()).scaled(0.5).max(util.Vec2.ZERO);
-				this.bb = bb.extend(d, d);
-			}
+			if (!this.bb)
+                            this.bb = new util.Box2Abs(util.Vec2.ZERO, this.viewSz);
+                        this.bb = util.Box2Abs.union(this.bb, bb);
 			bb = this.bb.clone();
 
 			var sz = util.Vec2.max(bb.sz().floor(), this.viewSz);
@@ -1018,26 +912,15 @@ rnd.Render.prototype.update = function (force)
 			}
 		} else {
 			var sz1 = bb.sz();
-			var marg = new util.Vec2(this.opt.autoScaleMargin, this.opt.autoScaleMargin);
-			var csz = this.viewSz.sub(marg.scaled(2));
-			if (csz.x < 1 || csz.y < 1)
+			var marg = this.opt.autoScaleMargin;
+            var mv = new util.Vec2(marg, marg);
+			var csz = this.viewSz;
+			if (csz.x < 2*marg+1 || csz.y < 2*marg+1)
 				throw new Error("View box too small for the given margin");
-			var rescale = Math.min(csz.x / sz1.x, csz.y / sz1.y);
-			this.ctab.scale(rescale);
-			var offset1 = csz.sub(sz1.scaled(rescale)).scaled(0.5).add(marg).sub(bb.pos().scaled(rescale));
-			this.ctab.translate(offset1);
+            var rescale = Math.max(sz1.x/(csz.x-2*marg), sz1.y/(csz.y-2*marg));
+            var sz2 = sz1.add(mv.scaled(2*rescale));
+            this.paper.setViewBox(bb.pos().x-marg*rescale-(csz.x*rescale-sz2.x)/2, bb.pos().y-marg*rescale-(csz.y*rescale-sz2.y)/2, csz.x*rescale, csz.y*rescale);
 		}
-	}
-
-    /** @deprecated */
-	this.muteMouseOutMouseOver = false;
-	if (this.checkCurItem) {
-		this.checkCurItem = false;
-		var event = new rnd.MouseEvent({
-			'pageX':this.pagePos.x,
-			'pageY':this.pagePos.y
-			});
-		this.checkCurrentItem(event);
 	}
 };
 
@@ -1069,9 +952,21 @@ rnd.Render.prototype.findClosestAtom = function (pos, minDist, skip) { // TODO s
 
 rnd.Render.prototype.findClosestBond = function (pos, minDist) { // TODO should be a member of ReBond (see ReFrag)
 	var closestBond = null;
+	var closestBondCenter = null;
 	var maxMinDist = this.opt.selectionDistanceCoefficient;
 	minDist = minDist || maxMinDist;
 	minDist = Math.min(minDist, maxMinDist);
+	var minCDist = minDist;
+	this.ctab.bonds.each(function(bid, bond){
+		var p1 = this.ctab.atoms.get(bond.b.begin).a.pp,
+		p2 = this.ctab.atoms.get(bond.b.end).a.pp;
+		var mid = util.Vec2.lc2(p1, 0.5, p2, 0.5);
+		var cdist = util.Vec2.dist(pos, mid);
+		if (cdist < minCDist) {
+		    minCDist = cdist;
+		    closestBondCenter = bid;
+		}
+	}, this);
 	this.ctab.bonds.each(function(bid, bond){
 		var hb = this.ctab.molecule.halfBonds.get(bond.b.hb1);
 		var d = hb.dir;
@@ -1088,18 +983,20 @@ rnd.Render.prototype.findClosestBond = function (pos, minDist) { // TODO should 
 			}
 		}
 	}, this);
-	if (closestBond != null)
+	if (closestBond !== null || closestBondCenter !== null)
 		return {
-			'id':closestBond,
-			'dist':minDist
+			'id': closestBond,
+			'dist': minDist,
+			'cid': closestBondCenter,
+			'cdist': minCDist
 		};
 	return null;
 };
 
 rnd.Render.prototype.findClosestItem = function (pos, maps, skip) {
 	var ret = null;
-	var updret = function(type, item) {
-		if (item != null && (ret == null || ret.dist > item.dist)) {
+	var updret = function(type, item, force) {
+		if (item != null && (ret == null || ret.dist > item.dist || force)) {
 			ret = {
 				'type':type,
 				'id':item.id,
@@ -1117,8 +1014,12 @@ rnd.Render.prototype.findClosestItem = function (pos, maps, skip) {
     }
     if (!maps || maps.indexOf('bonds') >= 0) {
         var bond = this.findClosestBond(pos);
-        if (ret == null || ret.dist > 0.4 * this.scale) // hack
-            updret('Bond', bond);
+	if (bond) {
+	    if (bond.cid !== null)
+		updret('Bond', {'id': bond.cid, 'dist': bond.cdist});
+	    if (ret == null || ret.dist > 0.4 * this.scale) // hack
+		updret('Bond', bond);
+	}
     }
     if (!maps || maps.indexOf('chiralFlags') >= 0) {
         var flag = rnd.ReChiralFlag.findClosest(this, pos);
@@ -1154,20 +1055,6 @@ rnd.Render.prototype.findClosestItem = function (pos, maps, skip) {
 		'id':-1
 	};
 	return ret;
-};
-
-rnd.Render.prototype.addItemPath = function (visel, group, path, rbb)
-{
-    if (!path) return; // [RB] thats ok for some hidden objects (fragment)
-	var bb = rbb ? util.Box2Abs.fromRelBox(rbb) : null;
-	var offset = this.offset;
-	if (offset != null) {
-		if (bb != null)
-			bb.translate(offset);
-		path.translate(offset.x, offset.y);
-	}
-	visel.add(path, bb);
-	this.ctab.insertInLayer(rnd.ReStruct.layerMap[group], path);
 };
 
 rnd.Render.prototype.setZoom = function (zoom) {
