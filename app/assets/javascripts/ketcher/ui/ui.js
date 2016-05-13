@@ -15,6 +15,7 @@ if (typeof(ui) == 'undefined')
 
 ui.standalone = false;
 ui.forwardExceptions = false;
+ui.inRailsIntegrated = true;
 
 ui.base_url = window.location.origin;
 ui.assets_base_url = window.location.origin + '/assets/ketcher/';
@@ -167,11 +168,16 @@ ui.initTemplates = function ()
 
                 rnd.customtemplates.push(tmpl);
                 ui.customtemplate_tool_modes.push('customtemplate_' + idx);
+                var tmlPath;
+                if(ui.inRailsIntegrated)
+                  tmlPath = '/assets/ketcher/icons/png/customtemplate/customtemplate'
+                else
+                  tmlPath = 'icons/png/customtemplate/customtemplate'
 
                 tbody.insert('<tr class="dropdownListItem" id="customtemplate_' + idx +
                         '" title="' + tmpl.name + ' (Shift+T)">' + '<td><div id="customtemplate_' + idx +
-                        '_preview" style="float:right"><img style="align:right" class="dropdownIconTemplate" src="icons/png/customtemplate/customtemplate' +
-                        idx + '.dropdown.png" alt="" /></div></td><td>' + tmpl.name + '</td></tr>');
+                        '_preview" style="float:right"><img style="align:right" class="dropdownIconTemplate" src="' + tmlPath +
+                        idx + '-dropdown.png" alt="" /></div></td><td>' + tmpl.name + '</td></tr>');
                 idx++;
             });
             ui.DropdownListSetIconAndTitle($('customtemplate'), $('customtemplate_0'));
@@ -199,7 +205,7 @@ ui.onClick_DropdownButton = function ()
 };
 
 ui.DropdownListSetIconAndTitle = function(dropdown, selected) {
-    dropdown.setAttribute('src', selected.select('img')[0].getAttribute('src').replace('.dropdown.','.sidebar.'));
+    dropdown.setAttribute('src', selected.select('img')[0].getAttribute('src').replace('-dropdown.','-sidebar.'));
     dropdown.title = selected.title;
 }
 

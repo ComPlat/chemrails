@@ -10,6 +10,37 @@
  * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  ***************************************************************************/
 
+//= require ketcher/prototype-min.js
+//= require ketcher/raphael.js
+//= require ketcher/base64.js
+//= require ketcher/third_party/keymaster.js
+//= require ketcher/util/common.js
+//= require ketcher/util/vec2.js
+//= require ketcher/util/set.js
+//= require ketcher/util/map.js
+//= require ketcher/util/pool.js
+//= require ketcher/chem/element.js
+//= require ketcher/chem/struct.js
+//= require ketcher/chem/molfile.js
+//= require ketcher/chem/sgroup.js
+//= require ketcher/chem/struct_valence.js
+//= require ketcher/chem/dfs.js
+//= require ketcher/chem/cis_trans.js
+//= require ketcher/chem/stereocenters.js
+//= require ketcher/chem/smiles.js
+//= require ketcher/chem/inchi.js
+//= require ketcher/rnd/visel.js
+//= require ketcher/rnd/restruct.js
+//= require ketcher/rnd/restruct_rendering.js
+//= require ketcher/rnd/render.js
+//= require ketcher/rnd/templates.js
+//= require ketcher/rnd/editor.js
+//= require ketcher/rnd/elem_table.js
+//= require ketcher/rnd/rgroup_table.js
+//= require ketcher/ui/ui.js
+//= require ketcher/ui/actions.js
+//= require ketcher/reaxys/reaxys.js
+
 ketcher = function () {
     this.render = null;
 };
